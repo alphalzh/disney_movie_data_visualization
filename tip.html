@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Assignment</title>
+    <script src="d3.v7.min.js"></script>
+    <script src="jquery-3.7.1.min.js"></script>
+    <script src="d3-v6-tip.js"></script>
+    <link rel="stylesheet" href="d3-tip.css">
+</head>
+
+<body>
+    <script>
+        const margin = { top: 50, right: 300, bottom: 50, left: 100 };
+        const width = 1200;
+        const height = 600;
+        const innerWidth = width - margin.left - margin.right;
+        const innerHeight = height - margin.top - margin.bottom;
+        const xScale = d3.scaleBand();
+        const yScale = d3.scaleLinear();
+
+        const svg = d3.select("body")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height);
+        const maingroup = svg
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        d3.csv("GDP.csv").then(function(data) {
+        data.forEach(d => {
+            d.year = +d.year;
+        });
+
+        const provinces = data.columns.slice(1); 
+        const allSeries = provinces.map(provinceName => {
+            return {
+            province: provinceName,
+            values: data.map(d => ({
+                year: d.year,
+                value: +d[provinceName] 
+            }))
+            };
+        });
+
+        const row2023 = data.find(d => d.year === 2023);
+
+
+        const provinceGDP2023 = provinces.map(prov => ({
+            province: prov,
+            gdp: +row2023[prov]
+        }));
+
+        provinceGDP2023.sort((a, b) => b.gdp - a.gdp);
+        const top5Provinces = provinceGDP2023.slice(0, 5).map(d => d.province);
+
+        const top5Series = allSeries.filter(s => top5Provinces.includes(s.province));
+
+        const xScale = d3.scaleLinear()
+            .domain(d3.extent(data, d => d.year))
+            .range([0, innerWidth]);
+
+        const maxGDP = d3.max(top5Series, series => 
+            d3.max(series.values, v => v.value)
+        );
+        const yScale = d3.scaleLinear()
+            .domain([0, Math.ceil(maxGDP/10000)*10000])
+            .range([innerHeight, 0]);
+
+        const lineGenerator = d3.line()
+            .x(d => xScale(d.year))
+            .y(d => yScale(d.value));
+
+        
+
+        const indicatorx = maingroup.append("line")
+            .attr("class", "indicatorx")
+            .attr("stroke", "black")
+            .attr("stroke-width", 2)
+            .style("stroke-dasharray", "3,3");
+
+        const indicatory = maingroup.append("line")
+            .attr("class", "indicatory")
+            .attr("stroke", "black")
+            .attr("stroke-width", 2)
+            .style("stroke-dasharray", "3,3");
+
+        maingroup.append("rect")
+        .attr("class", "overlay")
+            .attr("width", innerWidth)
+            .attr("height", innerHeight)
+            .style("fill", "none")
+            .style("pointer-events", "all")
+        .on("mousemove", function(event) {
+            const [mouseX, mouseY] = d3.pointer(event, this);
+            indicatorx.attr("x1", mouseX)
+                .attr("x2", mouseX)
+                .attr("y1", mouseY)
+                .attr("y2", innerHeight)
+                .style("pointer-events", "none");
+            indicatory.attr("x1", 0)
+                .attr("x2", mouseX)
+                .attr("y1", mouseY)
+                .attr("y2", mouseY)
+                .style("pointer-events", "none");
+        })
+        .on("mouseout", function(event) {
+            const [mouseX, mouseY] = d3.pointer(event, this);
+            indicatorx.attr("x1", 0)
+                .attr("x2", 0)
+                .attr("y1", 0)
+                .attr("y2", 0)
+                .style("pointer-events", "none");
+            indicatory.attr("x1", 0)
+                .attr("x2", 0)
+                .attr("y1", 0)
+                .attr("y2", 0)
+                .style("pointer-events", "none");
+        });
+        indicatorx.raise();
+        indicatory.raise();
+
+        function transitionPath(selection, duration) {
+            selection.each(function() {
+            const path = d3.select(this);
+            const totalLength = this.getTotalLength();
+
+            path
+                .attr("stroke-dasharray", totalLength + " " + totalLength)
+                .attr("stroke-dashoffset", totalLength)
+                .style("pointer-events", "none")
+                .transition()
+                .duration(duration)
+                .attr("stroke-dashoffset", 0)
+                .on("end", function(){
+                    d3.select(this)
+                        .style("pointer-events", "all");
+                    maingroup.selectAll(".circle")
+                        .style("pointer-events", "all");
+                });
+            });
+        }
+
+        const color = d3.scaleOrdinal()
+            .domain(top5Provinces)
+            .range(d3.schemeCategory10);
+
+        const lines = maingroup.selectAll(".line")
+            .data(top5Series)
+            .enter()
+            .append("path")
+            .attr("class", d => `line line-${d.province}`)
+            .attr("fill", "none")
+            .attr("stroke", d => color(d.province))
+            .attr(
+                "stroke-width", 4
+            )
+            .attr("d", d => lineGenerator(d.values));
+
+        transitionPath(lines, 2500);
+
+        const dots = maingroup.selectAll(".dots")
+            .data(top5Series)
+            .join("g")
+            .attr("class", d=> `dots dots-${d.province}`)
+            .style("fill", d => color(d.province))
+            .selectAll("circle")
+            .data(d => d.values.map(v => ({
+                year: v.year,
+                value: v.value,
+                province: d.province
+            })))
+            .join("circle")
+            .attr("class", "circle")
+            .attr("cx", v => xScale(v.year))
+            .attr("cy", v => yScale(v.value))
+            .attr("r", 5)
+            .attr("opacity", 0)
+
+        const tip = d3.tip()
+            .attr('class', 'd3-tip')
+            //.direction('s')
+            .html((event, d) => `<div>${d.year}年${d.province}GDP</div>
+                        <div>${d.value}亿元</div>`);
+        maingroup.call(tip);
+
+        dots.style("pointer-events", "none")
+            .transition()
+            .delay((d, i) => i * 100)
+            .duration(100)
+            .attr("opacity", 1);
+        dots.on("mouseover", function(event, d) {
+                tip.show(event, d, this);
+                d3.select(this)
+                    .transition()
+                    .duration(0)
+                    .attr("r", 8);
+                maingroup.selectAll(`.dots`)
+                .transition()
+                .duration(0)
+                .style("opacity", 0.2);
+                maingroup.selectAll(`.line`)
+                .transition()
+                .duration(0)
+                .style("opacity", 0.2);
+                maingroup.selectAll(`.line-label`)
+                .transition()
+                .duration(0)
+                .style("opacity", 0.2);
+                maingroup.selectAll(`.dots-${d.province}`)
+                .transition()
+                .duration(0)
+                .style("opacity", 1);
+                maingroup.selectAll(`.line-${d.province}`)
+                .transition()
+                .duration(0)
+                .style("opacity", 1);
+                maingroup.selectAll(`.line-label-${d.province}`)
+                .transition()
+                .duration(0)
+                .style("opacity", 1);
+            })
+            .on("mousemove", function(event, d) {
+                const [mouseX, mouseY] = d3.pointer(event, this);
+                indicatorx.attr("x1", mouseX)
+                    .attr("x2", mouseX)
+                    .attr("y1", mouseY)
+                    .attr("y2", innerHeight)
+                    .style("pointer-events", "none");
+                indicatory.attr("x1", 0)
+                    .attr("x2", mouseX)
+                    .attr("y1", mouseY)
+                    .attr("y2", mouseY)
+                    .style("pointer-events", "none");
+            })
+            .on("mouseout", function(event, d) {
+                tip.hide();
+                d3.select(this)
+                    .transition()
+                    .duration(250)
+                    .attr("r", 5);
+                maingroup.selectAll(`.dots`)
+                .transition()
+                .duration(250)
+                .style("opacity", 1);
+                maingroup.selectAll(`.line`)
+                .transition()
+                .duration(250)
+                .style("opacity", 1);
+                maingroup.selectAll(`.line-label`)
+                .transition()
+                .duration(250)
+                .style("opacity", 1);
+                indicatorx.attr("x1", 0)
+                .attr("x2", 0)
+                .attr("y1", 0)
+                .attr("y2", 0)
+                .style("pointer-events", "none");
+                indicatory.attr("x1", 0)
+                    .attr("x2", 0)
+                    .attr("y1", 0)
+                    .attr("y2", 0)
+                    .style("pointer-events", "none");
+                })
+        maingroup.selectAll(".line-label")
+            .data(top5Series)
+            .join("text")
+            .attr("class", d => `line-label line-label-${d.province}`)
+            .attr("x", d => {
+                const last = d.values[d.values.length - 1];
+                return xScale(last.year) + 15; // shift 5px right
+            })
+            .attr("y", d => {
+                const last = d.values[d.values.length - 1];
+                return yScale(last.value);
+            })
+            .attr("text-anchor", "start")
+            .attr("alignment-baseline", "middle")
+            .style("font-size", "15px")
+            .style("fill", d => color(d.province))
+            .style("font-weight", "bold")
+            .text(d => d.province)
+            .attr("opacity", 0)
+            .transition()
+            .delay(2500)
+            .attr("opacity", 1);
+
+        lines.on("mouseover", function(event, d) {
+            maingroup.selectAll(".line")
+                .transition()
+                .duration(0)
+                .style("opacity", 0.2);
+
+            maingroup.selectAll(".dots")
+                .transition()
+                .duration(0)
+                .style("opacity", 0.2);
+
+            d3.select(this)
+                .transition()
+                .duration(0)
+                .style("opacity", 1);
+                
+            maingroup.selectAll(`.dots-${d.province}`)
+                .transition()
+                .duration(0)
+                .style("opacity", 1);
+            maingroup.selectAll(`.line-label-${d.province}`)
+                .transition()
+                .duration(0)
+                .style("opacity", 1);
+        })
+        .on("mousemove", function(event, d) {
+            const [mouseX, mouseY] = d3.pointer(event, this);
+            indicatorx.attr("x1", mouseX)
+                .attr("x2", mouseX)
+                .attr("y1", mouseY)
+                .attr("y2", innerHeight)
+                .style("pointer-events", "none");
+            indicatory.attr("x1", 0)
+                .attr("x2", mouseX)
+                .attr("y1", mouseY)
+                .attr("y2", mouseY)
+                .style("pointer-events", "none");
+        })
+        .on("mouseout", function(event, d) {
+            maingroup.selectAll(".line")
+                .transition()
+                .duration(250)
+                .style("opacity", 1);
+            maingroup.selectAll(".dots")
+                .transition()
+                .duration(250)
+                .style("opacity", 1);
+        });
+
+        // 7. Draw axes
+        const xAxis = d3.axisBottom(xScale).ticks(19).tickFormat(d3.format("d")); 
+        const yAxis = d3.axisLeft(yScale).tickFormat(d3.format("~s"));
+
+        let xAxisGroup = maingroup.append("g")
+            .attr("transform", `translate(0, ${innerHeight})`)
+            .call(xAxis);
+        xAxisGroup.append('text')
+            .attr('font-size', '20')
+            .attr('y', 40)
+            .attr('x', innerWidth / 2)
+            .attr('fill', '#333333')
+            .text('年份');
+
+        let yAxisGroup = maingroup.append("g")
+            .call(yAxis);
+        yAxisGroup.append('text')
+            .attr('transform', `rotate(-90)`)
+            .attr('font-size', '20')
+            .attr('x', -innerHeight / 2)
+            .attr('y', -40)
+            .attr('fill', '#333333')
+            .text('地区生产总值(亿元)')
+            .attr('text-anchor', 'middle') // Make label at the middle of axis. 
+        });
+        
+    </script>
+</body>
+
+</html>

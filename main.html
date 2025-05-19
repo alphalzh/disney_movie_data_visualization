@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>D3 Visualization Switcher – Improved</title>
+<script src="d3.v7.min.js"></script>
+
+<style>
+/* ---------- layout ---------- */
+body{margin:0;font-family:sans-serif;background:#fafafa;}
+#wrapper{
+  width:800px;            /* fixed width */
+  margin:0 auto;
+}
+#viz-container{
+  width:100%;
+  height:350px;           /* fixed height for the main canvas */
+  display:flex;align-items:center;justify-content:center;
+  border:2px dashed #999; /* placeholder look */
+  font-size:28px;color:#666;
+  box-sizing:border-box;
+}
+#nav{
+  width:100%;
+  height:90px;
+}
+
+/* ---------- navigation dots & labels ---------- */
+.dot{fill:#888;transition:fill .2s;}
+.label{
+  font-size:14px;
+  text-anchor:middle;
+  pointer-events:none;        /* label should ignore mouse */
+  opacity:.5;                 /* always visible but semi-transparent */
+  user-select:none;
+}
+</style>
+</head>
+<body>
+<div id="wrapper">
+
+  <!-- main canvas (placeholder) -->
+  <div id="viz-container">Bar Chart Placeholder</div>
+
+  <!-- navigation bar -->
+  <svg id="nav"></svg>
+
+</div> <!-- /wrapper -->
+
+<script>
+/* ------------------------------------------------------------------
+   1. Configuration
+------------------------------------------------------------------ */
+const visualizations = [
+  {id:0, name:"条形图"},
+  {id:1, name:"折线图"},
+  {id:2, name:"散点图"}
+];
+
+const width      = 800;    // nav width (matches #wrapper)
+const height     = 90;
+const radius     = 12;     // default circle radius
+const gap        = 180;    // horizontal distance between dots
+const centerY    = 45;     // vertical centre line in nav SVG
+
+/* ------------------------------------------------------------------
+   2. Create SVG & background bar
+------------------------------------------------------------------ */
+const svg = d3.select("#nav")
+              .attr("viewBox", `0 0 ${width} ${height}`);
+
+const g = svg.append("g")
+             .attr("transform", `translate(0,${centerY})`);
+
+const firstX = width/2 - ((visualizations.length-1)*gap)/2;
+const lastX  = firstX + (visualizations.length-1)*gap;
+
+/* round-ended bar */
+g.append("line")
+ .attr("x1", firstX)
+ .attr("x2", lastX)
+ .attr("y1", 0)
+ .attr("y2", 0)
+ .attr("stroke", "#ddd")
+ .attr("stroke-width", 8)
+ .attr("stroke-linecap", "round");
+
+/* ------------------------------------------------------------------
+   3. Dots + labels
+------------------------------------------------------------------ */
+const dots = g.selectAll("g.dotGroup")
+  .data(visualizations)
+  .enter()
+  .append("g")
+  .attr("class", "dotGroup")
+  .attr("transform", (d,i)=>`translate(${firstX + i*gap},0)`)
+  .style("cursor","pointer");
+
+dots.append("circle")
+    .attr("class","dot")
+    .attr("r", radius);
+
+dots.append("text")
+    .attr("class","label")
+    .attr("y", radius + 18)   // label below the dot
+    .text(d=>d.name);
+
+/* ------------------------------------------------------------------
+   4. Interaction
+------------------------------------------------------------------ */
+dots.on("mouseover", function (){
+        d3.select(this).select("circle")
+          .transition().duration(200)
+          .attr("r", radius*1.5)
+          .attr("fill", "#4285F4");
+
+        d3.select(this).select("text")
+          .transition().duration(200)
+          .attr("opacity", 1);
+      })
+    .on("mouseout",  function (){
+        d3.select(this).select("circle")
+          .transition().duration(200)
+          .attr("r", radius)
+          .attr("fill", "#888");
+
+        d3.select(this).select("text")
+          .transition().duration(200)
+          .attr("opacity", .5);
+      })
+    .on("click",    function (event,d){
+        /* update placeholder (swap in your real drawing calls here) */
+        d3.select("#viz-container").text(`${d.name} Placeholder`);
+
+        /* mark active */
+        d3.selectAll(".dot").attr("fill","#888");
+        d3.select(this).select("circle").attr("fill","#4285F4");
+      });
+
+/* default active look for first dot */
+d3.select(dots.nodes()[0]).select("circle").attr("fill","#4285F4");
+</script>
+</body>
+</html>
