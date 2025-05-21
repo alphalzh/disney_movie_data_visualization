@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Movies in Genre</title>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
+    /* Center the list+chart horizontally & vertically */
+    body {
+      font-family: sans-serif;
+      display: flex;
+      justify-content: center;  /* center group horizontally */
+      align-items: center;      /* center vertically */
+    }
+
+    /* List: same height as the SVG and a little spacing */
+    #movie-list {
+      height: 480px;      /* match your chart height */
+      width: 180px;      /* fixed width */
+      /*padding: 10px;     /* some padding */
+      margin-right: 40px; /* gap between list and chart */
+      overflow-y: auto;   /* keep it scrollable */
+    }
+
+    #movie-list > h3 {
+      position: sticky;
+      top: -20px;
+      background: #fff;
+      padding: 10px 0;
+      margin: 0;
+      z-index: 1;
+    }
+
+    /* Optional: add a bit of spacing on the right of your SVG */
+    #chart {
+      margin-right: 20px;
+    }
+    .list-item {
+      padding-top: 6px;
+      padding-bottom: 6px;
+    }
+    .list-item:hover {
+      background: #eef;
+    }
+    .axis path, .axis line { stroke: #aaa; }
+    .axis text { font-size: 12px; }
+
+  </style>
+</head>
+<body>
+  <div id="movie-list"></div>
+  <svg id="chart" width="800" height="550"></svg>
+
+  <script src="d3.v7.min.js"></script>
+  <script src="d3-v6-tip.js"></script>
+  <link rel="stylesheet" href="d3-tip.css">
+  <script>
+
+    // 1. Parse genre from URL
+    const params = new URLSearchParams(window.location.search);
+    const selectedGenre = params.get("genre");
+
+    // 2. Load & filter data
+    d3.csv("disney_movies_total_gross.csv").then(raw => {
+      raw.forEach(d => {
+        d.gross = +d.inflation_adjusted_gross.replace(/[$,]/g, "");
+        d.year = new Date(d.release_date).getFullYear();
+        d.rating = d.MPAA_rating || "Not Rated";
+      });
+
+      const movies = raw
+        .filter(d => d.genre === selectedGenre && !isNaN(d.year) && !isNaN(d.gross))
+        .sort((a,b) => d3.ascending(a.movie_title, b.movie_title));
+
+      draw(movies);
+    });
+
+    function draw(movies) {
+      const svg = d3.select("#chart"),
+            margin = {top:40,right:150,bottom:60,left:60},
+            width = +svg.attr("width") - margin.left - margin.right,
+            height = +svg.attr("height") - margin.top - margin.bottom;
+
+      const g = svg.append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+      // Scales
+      const x = d3.scaleLinear()
+        .domain(d3.extent(movies, d=>d.year)).nice()
+        .range([0, width]);
+
+      const y = d3.scaleLinear()
+        .domain([0, d3.max(movies, d=>d.gross)]).nice()
+        .range([height, 0]);
+
+      const rScale = d3.scaleSqrt()
+        .domain([0, d3.max(movies, d=>d.gross)])
+        .range([4, 20]);
+
+        const ratings = ["Not Rated", "G", "PG", "PG-13", "R"];
+        const scheme = d3.schemeSet3;
+        const colorRating = d3.scaleOrdinal()
+        .domain(ratings)
+        .range([
+          scheme[2],  // G
+          scheme[0],  // Not Rated
+          scheme[1],  // PG
+          scheme[5],  // PG-13
+          scheme[3]   // R
+        ]);
+
+      // Axes
+      g.append("g")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(x).tickFormat(d3.format("d")))
+        .append("text")
+          .attr("x", width/2).attr("y", 40)
+          .attr("fill","#000").attr("text-anchor","middle")
+          .text("Release Year");
+
+      g.append("g")
+        .call(d3.axisLeft(y).tickFormat(d=>"$"+d3.format(".2s")(d).replace("G","B")))
+        .append("text")
+          .attr("transform","rotate(-90)")
+          .attr("x", -height/2).attr("y", -50)
+          .attr("fill","#000").attr("text-anchor","middle")
+          .text("Gross Income");
+
+      // Tooltip
+      const tip = d3.tip()
+        .attr("class","d3-tip")
+        .offset([-10,0])
+        .html(d => `
+          <strong>${d.movie_title}</strong><br/>
+          Year: ${d.year}<br/>
+          Gross: $${d3.format(",.2s")(d.gross).replace("G","B")}<br/>
+          Rating: ${d.rating}
+        `);
+
+      svg.call(tip);
+
+      // Draw circles
+      const circles = g.selectAll("circle")
+        .data(movies)
+        .enter().append("circle")
+          .attr("cx", d=>x(d.year))
+          .attr("cy", d=>y(d.gross))
+          .attr("r", d=>rScale(d.gross))
+          .attr("fill", d=>colorRating(d.rating))
+          .attr("stroke","#333")
+          .attr("opacity", 1)
+
+      // Interaction: hover dim others, enlarge current
+      circles
+        .on("mouseover", (event, d) => {
+        // 1. Interrupt any running transitions
+        circles.interrupt();
+
+        // 2. Dim all *other* circles smoothly
+        circles
+          .filter(dd => dd !== d)
+          .transition()
+          .duration(200)
+          .attr("opacity", 0.2)
+          .attr("r", dd => rScale(dd.gross));
+
+        // 3. Highlight the hovered circle smoothly
+        d3.select(event.currentTarget)
+          .transition()
+          .duration(200)
+          .attr("opacity", 1)
+          .attr("r", rScale(d.gross) * 1.5);
+
+        tip.show(d, event.currentTarget);
+      })
+      .on("mouseout", (event, d) => {
+        // 1. Interrupt any running transitions
+        circles.interrupt();
+
+        // 2. Restore all circles to full opacity & normal size
+        circles
+          .transition()
+          .duration(200)
+          .attr("opacity", 1)
+          .attr("r", dd => rScale(dd.gross));
+
+        tip.hide(d, event.currentTarget);
+      });
+
+      // Color legend
+      const legend = svg.append("g")
+        .attr("transform", `translate(${margin.left + width + 20},${margin.top})`);
+
+      ratings.forEach((r, i) => {
+        const row = legend.append("g")
+          .attr("transform", `translate(0,${i*20})`);
+
+        row.append("rect")
+          .attr("width", 12)
+          .attr("height", 12)
+          .attr("fill", colorRating(r));
+
+        row.append("text")
+          .attr("x", 18)
+          .attr("y", 10)
+          .text(r);
+      });
+
+      // Movie list
+      const list = d3.select("#movie-list");
+      const rootSvg = d3.select("#chart");
+
+      // compute total SVG width
+      const totalW = width + margin.left + margin.right;
+
+      rootSvg.append("text")
+        .attr("class", "genre-title")
+        .attr("x", totalW / 2)
+        .attr("y", margin.top / 2)
+        .attr("text-anchor", "middle")
+        .style("font-size", "20px")
+        .style("font-weight", "bold")
+        .text(`Genre: ${selectedGenre}`);
+
+      const items = list.selectAll(".list-item")
+        .data(movies)
+        .enter().append("div")
+          .attr("class","list-item")
+          .text(d=>d.movie_title)
+          .on("mouseover", (event, d) => {
+            // stop any in-flight transitions
+            circles.interrupt();
+            // dim all
+            circles.transition().duration(200).attr("opacity", 0.2).attr("r", d => rScale(d.gross));
+            // highlight this one
+            const c = circles.filter(dd => dd.movie_title === d.movie_title);
+            c.raise()
+            .transition().duration(200)
+            .attr("opacity", 1)
+            .attr("r", rScale(d.gross) * 1.5);
+            tip.show(d, c.node());
+          })
+          .style("cursor", "pointer");
+      d3.select("#movie-list")
+        .on("mouseleave", () => {
+          circles.interrupt()
+            .transition().duration(200)
+            .attr("opacity", 1)
+            .attr("r", d => rScale(d.gross));
+          tip.hide();
+        });
+    }
+  </script>
+</body>
+</html>

@@ -45,8 +45,17 @@
       d.gross = +d.inflation_adjusted_gross.replace(/[$,]/g, "");
     });
 
-    const allRatings = Array.from(new Set(raw.map(d => d.rating))).sort();
-    const colorRating = d3.scaleOrdinal(d3.schemeSet3).domain(allRatings);
+    const allRatings = ["Not Rated", "G", "PG", "PG-13", "R"];
+    const scheme = d3.schemeSet3;
+    const colorRating = d3.scaleOrdinal()
+    .domain(allRatings)
+    .range([
+      scheme[2],  // G
+      scheme[0],  // Not Rated
+      scheme[1],  // PG
+      scheme[5],  // PG-13
+      scheme[3]   // R
+    ]);
 
     const dataMap = d3.rollups(
       raw.filter(d => d.genre && !isNaN(d.gross)),
@@ -92,40 +101,36 @@
     d3.range(0,1.01,0.1).forEach(t => gradient.append("stop").attr("offset",`${t*100}%`).attr("stop-color", color(t*maxGross)));
     const legendX = width + 55;
     const lg = svg.append("g").attr("transform", `translate(${legendX},0)`);
-    const cbW = 150, cbH = 20;
+    const cbW = 150, cbH = 18;
     lg.append("text").attr("class","legend").attr("x",0).attr("y",30).text("Total Gross (color)");
     lg.append("rect").attr("x",0).attr("y",40).attr("width", cbW).attr("height", cbH).style("fill","url(#color-gradient)");
-    lg.append("g").attr("transform",`translate(0,${40+cbH})`).call(d3.axisBottom(d3.scaleLinear().domain([0,maxGross]).range([0,cbW])).ticks(5).tickFormat(d=>"$"+d3.format(".2s")(d).replace("G","B")));
-    const sizeY = 45 + cbH + 60;
+    lg.append("g").attr("transform",`translate(0,${40+cbH})`).call(d3.axisBottom(d3.scaleLinear().domain([0,25]).range([0,cbW])).ticks(5).tickFormat(d=>`$${d}B`));
+    const sizeY = 45 + cbH + 80;
     lg.append("text").attr("class","legend").attr("x",0).attr("y",sizeY).text("Total Gross (size)");
     const sizes = [maxGross*0.1, maxGross*0.5, maxGross];
     const sl = lg.append("g").attr("transform", `translate(0,${sizeY+32})`);
     sl.selectAll("circle").data(sizes).enter().append("circle").attr("cx",(d,i)=>i*60 + rScale(d)).attr("cy",0).attr("r",d=>rScale(d)).attr("fill",d=>color(d)).attr("stroke","#333");
-    sl.selectAll("text.size-label").data(sizes).enter().append("text").attr("x",(d,i)=>i*60+rScale(d)).attr("y",d=>rScale(d)+15).attr("text-anchor","middle").text(d=>"$"+d3.format(".2s")(d).replace("G","B"));
+    sl.selectAll("text.size-label").data(sizes).enter().append("text").attr("x",(d,i)=>i*60+rScale(d)).attr("y",d=>rScale(d)+15).attr("text-anchor","middle").text(d=>"$"+d3.format(".2s")(d).replace("G","B")).attr("font-size","0.8em");
 
     // GLOBAL PIE & LEGEND under scatter legends
     //const staticPie = svg.append("g").attr("class","static-pie").attr("transform", `translate(${legendX},${sizeY+100})`);
     const pieLegend = svg.append("g").attr("class","pie-legend").attr("transform", `translate(${legendX},${sizeY+120})`);
 
-    function updateStaticPie(genre) {
-      //staticPie.selectAll("*").remove();
-      pieLegend.selectAll("*").remove();
-      const breakdown = genreRating.get(genre) || [];
-      const pieGen = d3.pie().value(d=>d.sum);
-      const arcGen = d3.arc().innerRadius(0).outerRadius(pieR);
-      // draw pie
-      //staticPie.attr("transform", `translate(${legendX + cbW/2},${sizeY+100 + pieR})`);
-      //staticPie.selectAll("path").data(pieGen(breakdown)).enter().append("path")
-      //  .attr("d", arcGen)
-      //  .attr("fill", d=>colorRating(d.data.rating))
-      //  .attr("stroke","#fff");
-      // legend
-      allRatings.forEach((r,i) => {
-        const row = pieLegend.append("g").attr("transform", `translate(0,${i*20})`);
-        row.append("rect").attr("width",12).attr("height",12).attr("fill",colorRating(r));
-        row.append("text").attr("x",18).attr("y",10).text(r);
+    allRatings.forEach((r, i) => {
+        const row = pieLegend.append("g")
+          .attr("transform", `translate(0,${i*20})`);
+
+        row.append("rect")
+          .attr("width", 12)
+          .attr("height", 12)
+          .attr("fill", colorRating(r));
+
+        row.append("text")
+          .attr("x", 18)
+          .attr("y", 10)
+          .text(r);
       });
-    }
+
 
     function hoverOn(event, d, mode) {
       // dim others
@@ -159,7 +164,6 @@
       //svg.append("text").attr("class","hover-label").attr("x", cx).attr("y", cy - newR - 10)
       //  .text(`${d.genre}:\n ${d.count} movies\n $${d3.format(",.0f")(d.averageGross)} avg`);
       // update static pie and legend
-      updateStaticPie(d.genre);
     }
 
     function hoverOff(d) {
@@ -181,7 +185,12 @@
       .attr("fill", d=>color(d.totalGross)).attr("stroke","#333").attr("stroke-width",1)
       .attr("opacity",1)
       .on("mouseover", (e,d)=>hoverOn(e, d, "circle"))
-      .on("mouseout", (e,d)=>hoverOff(d));
+      .on("mouseout", (e,d)=>hoverOff(d))
+      .style("cursor", "pointer")
+      .on("click", (event, d) => {
+        const url = `genre_details.html?genre=${encodeURIComponent(d.genre)}`;
+        window.open(url, "_blank");
+      });
     circles.transition("raise").delay((d,i)=>i*100).duration(1000)
       .attr("cy", d=>y(d.averageGross)).attr("r", d=>rScale(d.totalGross));
 
@@ -191,7 +200,12 @@
     const genreItems = listGroup.selectAll(".genre-item").data(sortedData).enter().append("g").attr("class","genre-item")
       .attr("transform", (d,i)=>`translate(1,${i*(itemHeight+8)})`)
       .on("mouseover", (e,d)=>hoverOn(e, d, "list"))
-      .on("mouseout", ()=>hoverOff());
+      .on("mouseout", ()=>hoverOff())
+      .style("cursor", "pointer")
+      .on("click", (event, d) => {
+        const url = `genre_details.html?genre=${encodeURIComponent(d.genre)}`;
+        window.open(url, "_blank");
+      });
     genreItems.append("rect").attr("width", margin.left-5).attr("height", itemHeight-3)
       .attr("rx",4).attr("ry",4);
     genreItems.append("text").attr("x",5).attr("y", itemHeight/2+2).style('font-size', '0.5em').text(d => d.genre.split('/').pop());
