@@ -64,13 +64,15 @@
     #play-pause {
       background: none;
       border: none;
-      padding: 8px;      /* larger click area */
+      padding: 2px;      /* larger click area */
       cursor: pointer;
     }
-    #play-pause img {
-      width: 304px;       /* big icon */
-      height: 170px;
-      display: block;
+
+    #stop {
+      background: none;
+      border: none;
+      padding: 2px;      /* larger click area */
+      cursor: pointer;
     }
 
     /* Slider */
@@ -103,35 +105,12 @@
 </head>
 <body>
   <div id="chart"></div>
-  <div id="tooltip" class="tooltip"></div>
+  clearCanvas();
 
-  <div id="controls">
-    <button id="play-pause">
-      <img id="play-pause-icon" src="pause.png" alt="Pause">
-    </button>
-
-    <div class="slider-group">
-      <label for="start-slider">Start Year</label>
-      <input type="range" id="start-slider" min="0" step="1" value="0">
-      <div class="slider-coords">
-        <span id="start-min">0</span>
-        <span id="start-max">0</span>
-      </div>
-    </div>
-  
-    <div class="slider-group">
-      <label for="end-slider">End Year</label>
-      <input type="range" id="end-slider" min="0" step="1" value="0">
-      <div class="slider-coords">
-        <span id="end-min">0</span>
-        <span id="end-max">0</span>
-      </div>
-    </div>
-  </div>
 
   <script src="d3.v7.min.js"></script>
   <script>
-    const margin = { top: 50, right: 200, bottom: 30, left: 50 };
+    const margin = { top: 50, right: 200, bottom: 100, left: 50 };
     const width  = 900 - margin.left - margin.right;
     const height = 500 - margin.top - margin.bottom;
 
@@ -158,7 +137,7 @@
       data = data.filter(d => !isNaN(d.year) && !isNaN(d.gross));
       const years = Array.from(new Set(data.map(d => d.year))).sort((a,b)=>a-b);
 
-      const cumulative = years.map(year=>({
+      let cumulative = years.map(year=>({
         year,
         movies: data
           .filter(d=>d.year<=year)
@@ -216,57 +195,143 @@
 
             // ▶▶ REPLACED: dual-slider + bounded playback logic
 
-      // Playback & interval window indices
-      let startIndex = 0,
-          endIndex   = cumulative.length - 1,
-          current    = 0,
-          isPlaying  = true,
-          interval;
+      const svgNode   = svg.node();
+      const svgWidth  = width;
+      const svgHeight = height;
 
-      // Play/Pause button
-      const playButton  = d3.select('#play-pause'),
-            icon        = d3.select('#play-pause-icon');
+      // 2) reserve a little strip at the bottom for controls
+      const controlHeight = 50;
 
-      // New sliders
-      const startSlider = d3.select('#start-slider')
-            .attr('max', cumulative.length - 1),
-            endSlider   = d3.select('#end-slider')
-            .attr('max', cumulative.length - 1)
-            .property('value', cumulative.length - 1);
-      
-                // ② **Add the min/max labels here**:
-      document.getElementById('start-min').textContent = years[0];
-      document.getElementById('start-max').textContent = years[years.length - 1];
-      document.getElementById('end-min')  .textContent = years[0];
-      document.getElementById('end-max')  .textContent = years[years.length - 1];
+      // 3) append a foreignObject container
+      const fo = svg.append('foreignObject')
+        .attr('x',      0)
+        .attr('y',      svgHeight + controlHeight-15)
+        .attr('width',  svgWidth)
+        .attr('height', controlHeight);
 
-      // When the user moves the start-slider…
+      const controls = fo.append('xhtml:div')
+        .style('display',        'flex')
+        .style('align-items',    'center')
+        .style('justify-content','flex-start')
+        .style('height',         `${controlHeight}px`)
+        .style('padding',        '0 10px')
+        .style('font-family',    'sans-serif');
+
+      // 3) add the Play button
+      controls.append('button')
+        .attr('id', 'play-pause')
+        .style('margin-left', '30px')
+        .style('margin-right', '2px')
+        .style('font-size',    '16px')
+        .style('cursor',       'pointer')
+        .style('opacity', 0.8)
+        .append('img')
+          .attr('id', 'play-pause-icon')
+          .attr('src', 'pause.png')
+          .attr('alt', 'Pause')
+          .style('width', '30px')  // Adjust size as needed
+          .style('height', '30px'); // Adjust size as needed
+
+      controls.append('button')
+        .attr('id', 'stop')
+        .style('margin-left', '10px')
+        .style('margin-right', '20px')
+        .style('font-size',    '16px')
+        .style('cursor',       'pointer')
+        .style('opacity', 0.8)
+        .append('img')
+          .attr('id', 'stop-icon')
+          .attr('src', 'stop.png')
+          .style('width', '30px')  // Adjust size as needed
+          .style('height', '30px'); // Adjust size as needed
+
+      //// 4) inside it, create an XHTML <div> flexbox to hold two groups
+      //const controls = fo.append('xhtml:div')
+      //  .style('display',        'flex')
+      //  .style('justify-content','space-around')
+      //  .style('align-items',    'center')
+      //  .style('height',         `${controlHeight}px`)
+      //  .style('font-family',    'sans-serif');
+
+      // 5) for each of “start” and “end”, append a label, a range input, and a span for the current-year
+      ['start','end'].forEach(name => {
+        const isStart    = name === 'start';
+        const defaultIdx = isStart ? 0 : cumulative.length - 1;
+        const group      = controls.append('div').style('text-align','center');
+
+        group.append('label')
+            .attr('for', `${name}-slider`)
+            .style('margin-right','8px')
+            .text(isStart ? 'Start Year:' : 'End Year:');
+
+        group.append('input')
+            .attr('type',  'range')
+            .attr('id',    `${name}-slider`)
+            .attr('min',   0)
+            .attr('max',   cumulative.length - 1)
+            .style('accent-color', '#007FFF')
+            .style('margin-right', '20px')
+            .style('margin-top', '12px')
+            .property('value', defaultIdx);
+
+        group.append('div')
+            .append('span')
+            .attr('id',   `${name}-current`)
+            .style('font-weight','bold')
+            .text(years[defaultIdx]);
+      });
+
+      // 6) set up your index vars
+      let startIndex = 0;
+      let isPlaying  = true;
+      let endIndex   = cumulative.length - 1;
+      let current    = startIndex;
+
+      // 7) wire up the two sliders exactly as before, but now update the dynamically-created spans
+      const startSlider = d3.select('#start-slider');
+      const endSlider   = d3.select('#end-slider');
+
       startSlider.on('input', function() {
-        startIndex = +this.value;
-        // Clamp endIndex if necessary
+        const idx = +this.value;
+        startIndex = idx;
+
+        // clamp end
         if (startIndex > endIndex) {
           endIndex = startIndex;
           endSlider.property('value', endIndex);
+          d3.select('#end-current').text(years[endIndex]);
         }
-        // Jump chart to new start
+
+        // update chart & label
         current = startIndex;
         update(cumulative[current]);
+        d3.select('#start-current').text(years[startIndex]);
       });
 
-      // When the user moves the end-slider…
       endSlider.on('input', function() {
-        endIndex = +this.value;
-        // Clamp startIndex if necessary
+        const idx = +this.value;
+        endIndex = idx;
+
+        // clamp start
         if (endIndex < startIndex) {
           startIndex = endIndex;
           startSlider.property('value', startIndex);
+          d3.select('#start-current').text(years[startIndex]);
         }
-        // If we’re past the new end, rewind
+
+        // rewind chart if beyond end
         if (current > endIndex) {
           current = endIndex;
           update(cumulative[current]);
         }
+
+        // update label
+        d3.select('#end-current').text(years[endIndex]);
       });
+
+      const playButton  = d3.select('#play-pause'),
+      icon        = d3.select('#play-pause-icon');
+      const stopButton  = d3.select('#stop');
 
       // Replace your old single‐slider input handler with play/pause wiring:
       playButton.on('click', () => {
@@ -274,11 +339,25 @@
           stop();
           icon.attr('src','play.png').attr('alt','Play');
         } else {
-          start();
+          if (current >= endIndex){
+            console.log('current:', current);
+            current = startIndex;
+          }
+          start(1000);
           icon.attr('src','pause.png').attr('alt','Pause');
         }
         isPlaying = !isPlaying;
-      });
+      })
+      .on('mouseover', () => {
+        d3.select('#play-pause')
+          .style('cursor', 'pointer')
+          .style('opacity', 1);
+      })
+      .on('mouseout', () => {
+        d3.select('#play-pause')
+          .style('cursor', 'default')
+          .style('opacity', 0.8);
+      })
 
       // ◀◀ end replacement ◀◀
 
@@ -286,8 +365,8 @@
       function update(frame) {
         // ① make sure our scale only knows about *this* year’s titles
         color.domain(frame.movies.map(d => d.title));
-        const t = svg.transition().duration(500),
-              movies = frame.movies;
+        const t = svg.transition().duration(500);
+        const movies = frame.movies;
 
         // BARS
         const bars = svg.selectAll('.bar')
@@ -355,6 +434,25 @@
         // sync slider
         // slider.property('value', yearIndex);
       }
+      
+      stopButton.on('click', () => {
+        if (isPlaying) {
+          stop();
+          icon.attr('src','play.png').attr('alt','Play');
+          start(0);
+        } 
+        isPlaying = false;
+      })
+      .on('mouseover', () => {
+        d3.select('#stop')
+          .style('cursor', 'pointer')
+          .style('opacity', 1);
+      })
+      .on('mouseout', () => {
+        d3.select('#stop')
+          .style('cursor', 'default')
+          .style('opacity', 0.8);
+      })
 
       // function start(){
       //   interval = d3.interval(()=>{
@@ -368,18 +466,41 @@
       //     }
       //   }, 1000);
       // }
-      function start(){
+
+      let currentStartIdx = startIndex;
+      function start(t){
         interval = d3.interval(()=>{
        // advance only up to endIndex
+       if (currentStartIdx !== startIndex) {
+         //update cumulative
+         currentStartIdx = startIndex;
+         cumulative = years.map(year=>({
+            year,
+            movies: data
+              .filter(d=>d.year<=year && d.year>=years[currentStartIdx])
+              .sort((a,b)=>b.gross-a.gross)
+              .slice(0,10)
+          }));
+          console.log(years[currentStartIdx]);
+          console.log(cumulative);
+          
+       }
        if (current < endIndex) {
-         current++;
-         update(cumulative[current]);
+        if (t == 0){
+          current = endIndex;
+          update(cumulative[current]);
+          stop();
+        }
+        else{
+          current++;
+          update(cumulative[current]);
+        }
        } else {
          stop();
          icon.attr('src','play.png').attr('alt','Play');
          isPlaying = false;
        }
-     }, 1000);
+     }, t);
    }
 
 
@@ -389,7 +510,7 @@
 
     // init + autoplay
     update(cumulative[current]);
-    start();
+    start(1000);
     })
     .catch(err=>console.error(err));
   </script>

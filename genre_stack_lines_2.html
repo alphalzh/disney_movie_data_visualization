@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Disney Gross by Top 3 Genres + Others</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      overflow: hidden;
+    }
+    svg {
+      display: block;
+      margin: auto;
+    }
+    .area {
+      stroke: #333;
+      stroke-width: 0.5px;
+      fill-opacity: 0.8;
+    }
+    .axis path,
+    .axis line {
+      stroke: #aaa;
+    }
+    .axis text {
+      font-size: 12px;
+    }
+    .legend {
+      font-size: 12px;
+    }
+    .tooltip {
+      position: absolute;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 8px;
+      border-radius: 4px;
+      pointer-events: none;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <svg id="chart"></svg>
+
+  <script src="d3.v7.min.js"></script>
+  <script>
+  const margin = { top: 40, right: 150, bottom: 40, left: 60 };
+  const width  = 960 - margin.left - margin.right;
+  const height = 500 - margin.top - margin.bottom;
+
+  const svg = d3.select("#chart")
+    .attr("width",  width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+    .append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+  // Clip‐path for reveal animation
+  svg.append("defs")
+    .append("clipPath")
+      .attr("id", "reveal-clip")
+    .append("rect")
+      .attr("width", 0)
+      .attr("height", height);
+
+  d3.csv("disney_movies_total_gross.csv", d => ({
+    year:  new Date(d.release_date).getFullYear(),
+    genre: d.genre || "Unknown",
+    gross: +d.inflation_adjusted_gross.replace(/[$,]/g, ""),
+    title: d.movie_title,
+  })).then(raw => {
+    // 1. Filter out bad rows
+    const data = raw.filter(d =>
+      !isNaN(d.year) &&
+      d.genre &&
+      !isNaN(d.gross)
+    );
+    console.log("Data loaded:", data.length, "rows",data);
+
+    // 1.1. Sort by year, 现象级影片
+    // const movieByYear = d3.rollups(
+    //   data,
+    //   arr => d3.max(arr, d => ({title: d.title, gross: d.gross})),
+    //   d => d.year
+    // );
+    // const movieMap = new Map(movieByYear);
+    const movieByYear = d3.rollups(
+      data,
+      arr => {
+        const valid = arr.map(d => ({ ...d, gross: +d.gross }));
+        const maxGross = d3.max(valid, d => d.gross);
+        const best = valid.find(d => d.gross === maxGross) || {};
+        return {
+          title:     best.title || "Unknown",
+          genre:     best.genre || "Unknown",     // ← capture genre
+          gross:     maxGross,
+          formatted: d3.format("$.2f")(maxGross / 1e9) + "B"
+        };
+      },
+      d => d.year
+    );
+    const movieByYearFiltered = movieByYear
+      .map(([yr, mv]) => [yr, mv])
+      .filter(([yr, mv]) => mv.gross >= 4e8);
+    const movieMap = new Map(movieByYearFiltered);
+    console.log("best Movie by year:", "rows", movieMap);
+
+    const milestones = new Map([
+      [1937, "Released the first animated feature film 'Snow White and the Seven Dwarfs'"],
+      [1940, "Experimental animation 'Fantasia' combines classical music and animation"],
+      [1950, "'Cinderella' became a symbol of the post-war animation revival"],
+      [1984, "Michael Eisner became CEO"],
+      [1989, "'The Little Mermaid' opened the Disney Renaissance"],
+      [1995, "Cooperated with Pixar to launch first CG animation 'Toy Story'"],
+      [2003, "Released Pixar's 'Finding Nemo'"],
+      [2006, "Acquired Pixar Animation"],
+      [2009, "Acquired Marvel Entertainment"],
+      [2012, "Acquired Lucasfilm"],
+      [2015, "Launched Disney Movies Anywhere"]
+    ]);
+
+
+
+    // 2. Compute total gross per genre, sort and pick top 3
+    const genreTotals = d3.rollups(
+      data,
+      v => d3.sum(v, d => d.gross),
+      d => d.genre
+    ).sort((a,b) => b[1] - a[1]);
+
+    const topGenres = genreTotals.slice(0,4).map(d => d[0]);
+    const allSeries  = [...topGenres, "Others"];
+
+    // 3. Roll up by year & genre
+    const yearGenreRollup = d3.rollups(
+      data,
+      v => d3.sum(v, d => d.gross),
+      d => d.year,
+      d => d.genre
+    );
+    const yearMap = new Map(
+      yearGenreRollup.map(([year, arr]) =>
+        [year, new Map(arr)]
+      )
+    );
+
+    yearGenreRollup.sort((a, b) => d3.ascending(a[0], b[0]));
+
+    const yearGenreCumsum = [];   // [ [year, Map<genre, cumGross>] … ]
+    let running = new Map();
+    d3.rollups(
+      data,
+      v => d3.sum(v, d => d.gross),
+      d => d.year,
+      d => d.genre
+    )
+      .sort((a,b) => d3.ascending(a[0], b[0]))
+      .forEach(([year, genArr]) => {
+        genArr.forEach(([g, sum]) => {
+          running.set(g, (running.get(g)||0) + sum);
+        });
+        yearGenreCumsum.push([ year, new Map(running) ]);
+      });
+    const genreCumsumMap = new Map(yearGenreCumsum);
+
+
+    const cumMap = new Map(yearGenreCumsum);
+    
+
+    // 4. Build per‐year table with only top 3 + Others
+    const years = Array.from(yearMap.keys()).sort((a,b) => a - b);
+    const table = years.map(year => {
+      const byGen = yearMap.get(year);
+      // sum of all other genres
+      const sumOthers = d3.sum(
+        Array.from(byGen.entries())
+          .filter(([g]) => !topGenres.includes(g))
+          .map(([,v]) => v)
+      );
+      const row = { year: new Date(year,0,1) };
+      topGenres.forEach(g => {
+        row[g] = byGen.get(g) || 0;
+      });
+      row["Others"] = sumOthers;
+      return row;
+    });
+
+    const tableCum = years.map(year => {
+      const byGenCum = cumMap.get(year);  
+      // cumulative “others” up to this year:
+      const sumOthers = d3.sum(
+        Array.from(byGenCum.entries())
+          .filter(([g]) => !topGenres.includes(g))
+          .map(([,v]) => v)
+      );
+
+      const row = { year: new Date(year, 0, 1) };
+      topGenres.forEach(g => {
+        row[g] = byGenCum.get(g) || 0;
+      });
+      row["Others"] = sumOthers;
+      return row;
+    });
+
+      // 0b. total‐stack‐top per year:
+    const cumTotalByYear = {};
+    tableCum.forEach(r => {
+      cumTotalByYear[r.year.getFullYear()] =
+        allSeries.reduce((s,k) => s + r[k], 0);
+    });
+
+    const totalByYear = {};
+    table.forEach(r => {
+      totalByYear[r.year.getFullYear()] =
+        allSeries.reduce((s,k) => s + r[k], 0);
+    });
+
+    // 5. Stack layout
+    const stack = d3.stack()
+      .keys(allSeries)
+      .order(d3.stackOrderNone)
+      .offset(d3.stackOffsetNone);
+
+    const series = stack(table);
+
+    const seriesMap = new Map(series.map(layer => [layer.key, layer]));
+
+    // 6. Scales & axes
+    const x = d3.scaleTime()
+      .domain(d3.extent(table, d => d.year))
+      .range([0, width]);
+
+    const y = d3.scaleLinear()
+      .domain([0, d3.max(series, s => d3.max(s, d => d[1]))])
+      .nice()
+      .range([height, 0]);
+
+    const myScheme = d3.schemeSet3.filter((_, i) => i !== 4);
+
+    const color = d3.scaleOrdinal()
+      .domain(allSeries)
+      .range(myScheme);
+
+
+    svg.append("g")
+      .attr("class", "axis")
+      .attr("transform", `translate(0,${height})`)
+      .call(d3.axisBottom(x).ticks(10).tickFormat(d3.timeFormat("%Y")));
+
+    svg.append("g")
+      .attr("class", "axis")
+      .call(d3.axisLeft(y)
+        .ticks(6)
+        .tickFormat(d => "$" + d3.format(".2s")(d).replace("G","B"))
+      );
+
+    svg.append("text")
+      .attr("class", "axis-label")
+      .attr("x", width / 2)
+      .attr("y", height + margin.bottom - 6)  // tuck it just below the axis ticks
+      .attr("text-anchor", "middle")
+      .style("font-size", "12px")
+      .text("Year");
+
+    // — after you’ve drawn the Y axis (e.g. svg.append("g").call(d3.axisLeft(y))…)
+    svg.append("text")
+      .attr("class", "axis-label")
+      .attr("transform", "rotate(-90)")
+      .attr("x", -height / 2)
+      .attr("y", -margin.left + 14)            // shift right from the left edge
+      .attr("text-anchor", "middle")
+      .style("font-size", "12px")
+      .text("Total Gross Income by Genre");
+
+    // 7. Draw areas (clipped)
+    const area = d3.area()
+      .x(d => x(d.data.year))
+      .y0(d => y(d[0]))
+      .y1(d => y(d[1]));
+
+    svg.append("g")
+      .attr("clip-path", "url(#reveal-clip)")
+      .selectAll(".layer")
+      .data(series)
+      .join("path")
+        .attr("class", "area")
+        .attr("fill", d => color(d.key))
+        .attr("d", area);
+
+    // 8. Legend
+    const legend = svg.append("g")
+      .attr("transform", `translate(${width + 20},0)`);
+
+    allSeries.forEach((g,i) => {
+      const row = legend.append("g")
+        .attr("transform", `translate(0,${i*20})`);
+      row.append("rect")
+        .attr("width", 15)
+        .attr("height", 15)
+        .attr("fill", color(g));
+      row.append("text")
+        .attr("x", 20)
+        .attr("y", 12)
+        .attr("class", "legend")
+        .text(g);
+    });
+
+    const tooltip = d3.select("body")
+      .append("div")
+      .attr("class", "tooltip")
+      .style("max-width", "280px")  // 新增宽度限制
+      .style("line-height", "1.4")   // 调整行高
+      .style("position", "absolute")
+      .style("background", "white")    //
+      .style("color", "black")        //
+      .style("padding", "8px")
+      .style("border-radius", "2px")
+      .style("font-size", "13px")
+      // .style("box-shadow", "none")    // 移除阴影
+      // .style("border", "none")        // 无边框
+      .style("pointer-events", "none")
+      .style("font-family", "Arial, sans-serif")
+      .style("display", "none");
+
+    // ───────────────────────────────────────────────
+    // 2. Milestone dots **above** stack, dashed lines **down** to top-of-stack
+
+    const milestonePoints = Array.from(milestones.entries()).map(
+      ([yr, txt]) => ({
+        year: new Date(+yr,0,1),
+        text: txt
+      })
+    );
+
+    const dotOffset = 25;
+
+    const milestoneGroup = svg.append("g").attr("class","milestones");
+
+    // 2a. dashed lines
+    milestoneGroup.selectAll("line")
+      .data(milestonePoints)
+      .enter().append("line")
+        .attr("x1", d => x(d.year))
+        .attr("x2", d => x(d.year))
+        .attr("y1", d => {
+          const yTop = y(totalByYear[d.year.getFullYear()]);
+          return yTop;
+        })
+        .attr("y2", d => {
+          const yTop = y(totalByYear[d.year.getFullYear()]);
+          return yTop;
+        })
+        .attr("stroke","#888")
+        .attr("stroke-dasharray","4 2")
+        .attr("opacity", 0);
+
+    // 2b. milestone circles
+    milestoneGroup.selectAll("circle")
+      .data(milestonePoints)
+      .enter().append("circle")
+        .attr("class","milestone-dot")
+        .attr("cx", d => x(d.year))
+        .attr("cy", d => {
+          const yTop = y(totalByYear[d.year.getFullYear()]);
+          return yTop;
+        })
+        .attr("r",5)
+        .attr("fill","steelblue")
+        .attr("opacity", 0)
+      .on("mouseover", function(event, d) {
+        d3.select(this).transition().attr("r",7);
+        const html = `
+          <div style="font-weight:600;margin-bottom:4px">
+            ${d.year.getFullYear()}
+          </div>
+          <div style="font-size:11px;color:#999">DISNEY MILESTONE</div>
+          <div style="margin-top:2px;color:#444">${d.text}</div>
+        `;
+        tooltip
+          .html(html)
+          .style("left", (event.pageX+15)+"px")
+          .style("top",  (event.pageY+15)+"px")
+          .style("display","block");
+      })
+      .on("mouseout", function() {
+        d3.select(this).transition().attr("r",5);
+        tooltip.style("display","none");
+      });
+
+    // 2. Prepare arrays of "best movie" points and "milestone" points
+    const moviePoints = Array.from(movieMap.entries()).map(([yr, m]) => ({
+      year:  new Date(+yr,0,1),
+      title: m.title,
+      genre: topGenres.includes(m.genre) ? m.genre : "Others",
+      label: m.formatted
+    }));
+
+    const movieGroup = svg.append("g").attr("class","movie-dots");
+
+    movieGroup.selectAll("circle")
+      .data(moviePoints)
+      .enter().append("circle")
+        .raise()
+        .attr("class","movie-dot")
+        .attr("cx", d => x(d.year))
+        .attr("cy", d => {
+          // grab the right layer for this movie’s genre
+          const layer = seriesMap.get(d.genre);
+          if (!layer) return y(0);   // fallback if somehow missing
+
+          // find the [y0,y1] tuple for this exact year
+          const point = layer.find(p =>
+            p.data.year.getFullYear() === d.year.getFullYear()
+          );
+          return y(point[1]);        // point[1] is the top of the band
+        })
+        .attr("r", 3.5)
+        .attr("fill","#3f3f3f")
+        .attr("opacity", 0)
+      .on("mouseover", function(event, d) {
+        d3.select(this).transition().attr("r",6);
+        const html = `
+          <div style="font-weight:600;margin-bottom:4px">
+            ${d.year.getFullYear()}
+          </div>
+          <div style="font-size:11px;color:#999">MOVIE OF THE YEAR</div>
+          <div style="color:#666;margin-top:2px">${d.title}, ${d.genre}</div>
+          <div style="color:#c8990a;font-weight:500">${d.label}</div>
+        `;
+        tooltip
+          .html(html)
+          .style("left", (event.pageX+15)+"px")
+          .style("top",  (event.pageY+15)+"px")
+          .style("display","block");
+      })
+      .on("mouseout", function() {
+        d3.select(this).transition().attr("r",3.5);
+        tooltip.style("display","none");
+      });
+
+    // 9. Animate reveal
+    const clipT = svg.select("#reveal-clip rect")
+      .transition()
+      .duration(5000)
+      .attr("width", width);
+
+    clipT.on("end", () => {
+  
+      // 4a) Fade in movie dots
+      movieGroup.selectAll("circle")
+        .transition()
+          .duration(1000)
+          .attr("opacity", 1);
+      
+      // 4b) “Grow” the milestone dashed‐lines downward
+      milestoneGroup.selectAll("line")
+        .transition()
+          .duration(1000)
+          .attr("y1", d => {
+            const yTop = y(totalByYear[d.year.getFullYear()]);
+            return yTop - dotOffset;    // extend up by dotOffset
+          })
+          .attr("opacity", 1);
+      
+      // 4c) “Pop” the milestone dots upward
+      milestoneGroup.selectAll("circle")
+        .transition()
+          .delay(200)                  // slight delay after the line
+          .duration(800)
+          .attr("cy", d => {
+            const yTop = y(totalByYear[d.year.getFullYear()]);
+            return yTop - dotOffset;
+          })
+          .attr("opacity", 1);
+    });
+
+  }).catch(err => console.error(err));
+  </script>
+</body>
+</html>

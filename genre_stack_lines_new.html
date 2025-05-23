@@ -176,6 +176,9 @@
       return [year, snapshot];
     });
 
+    const cumMap = new Map(yearGenreCumsum);
+    
+
     // 4. Build per‐year table with only top 3 + Others
     const years = Array.from(yearMap.keys()).sort((a,b) => a - b);
     const table = years.map(year => {
@@ -194,13 +197,30 @@
       return row;
     });
 
+    const tableCum = years.map(year => {
+    const byGenCum = cumMap.get(year);  
+    // cumulative “others” up to this year:
+    const sumOthers = d3.sum(
+      Array.from(byGenCum.entries())
+        .filter(([g]) => !topGenres.includes(g))
+        .map(([,v]) => v)
+    );
+
+    const row = { year: new Date(year, 0, 1) };
+    topGenres.forEach(g => {
+      row[g] = byGenCum.get(g) || 0;
+    });
+    row["Others"] = sumOthers;
+    return row;
+  });
+
     // 5. Stack layout
     const stack = d3.stack()
       .keys(allSeries)
       .order(d3.stackOrderNone)
       .offset(d3.stackOffsetNone);
 
-    const series = stack(table);
+    const series = stack(tableCum);
 
     // 6. Scales & axes
     const x = d3.scaleTime()
@@ -215,7 +235,7 @@
     const color = d3.scaleOrdinal()
       .domain(allSeries)
       // .range(d3.schemeTableau10);
-      .range(d3.schemeSet2);
+      .range(d3.schemeSet3);
 
 
     svg.append("g")
