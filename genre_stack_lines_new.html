@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Disney Gross by Top 3 Genres + Others</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      overflow: hidden;
+    }
+    svg {
+      display: block;
+      margin: auto;
+    }
+    .area {
+      stroke: #333;
+      stroke-width: 0.5px;
+      fill-opacity: 0.8;
+    }
+    .axis path,
+    .axis line {
+      stroke: #aaa;
+    }
+    .axis text {
+      font-size: 12px;
+    }
+    .legend {
+      font-size: 12px;
+    }
+    .tooltip {
+      position: absolute;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 8px;
+      border-radius: 4px;
+      pointer-events: none;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <svg id="chart"></svg>
+
+  <script src="d3.v7.min.js"></script>
+  <script>
+  const margin = { top: 40, right: 150, bottom: 40, left: 60 };
+  const width  = 960 - margin.left - margin.right;
+  const height = 500 - margin.top - margin.bottom;
+
+  const svg = d3.select("#chart")
+    .attr("width",  width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+    .append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+  // Clip‐path for reveal animation
+  svg.append("defs")
+    .append("clipPath")
+      .attr("id", "reveal-clip")
+    .append("rect")
+      .attr("width", 0)
+      .attr("height", height);
+
+  d3.csv("disney_movies_total_gross.csv", d => ({
+    year:  new Date(d.release_date).getFullYear(),
+    genre: d.genre || "Unknown",
+    gross: +d.inflation_adjusted_gross.replace(/[$,]/g, ""),
+    title: d.movie_title,
+  })).then(raw => {
+    // 1. Filter out bad rows
+    const data = raw.filter(d =>
+      !isNaN(d.year) &&
+      d.genre &&
+      !isNaN(d.gross)
+    );
+    console.log("Data loaded:", data.length, "rows",data);
+
+    // 1.1. Sort by year, 现象级影片
+    // const movieByYear = d3.rollups(
+    //   data,
+    //   arr => d3.max(arr, d => ({title: d.title, gross: d.gross})),
+    //   d => d.year
+    // );
+    // const movieMap = new Map(movieByYear);
+    const movieByYear = d3.rollups(
+      data,
+      arr => {
+        // 确保数值类型
+        const validEntries = arr.map(d => ({
+          ...d,
+          gross: typeof d.gross === 'number' ? d.gross : 0
+        }));
+        
+        // 找到最大票房
+        const maxGross = d3.max(validEntries, d => d.gross);
+        
+        // 返回带格式化字符串的结果
+        return {
+          title: validEntries.find(d => d.gross === maxGross)?.title || "Unknown",
+          gross: maxGross,
+          formatted: d3.format("($.1f")(maxGross) // 格式化为 $1.23B
+        };
+      },
+      d => d.year
+    );
+
+    console.log("Movie by year:", movieByYear.length, "rows", movieByYear);
+
+    const movieByYearFiltered = movieByYear
+      .map(([year, movie]) => [year, {
+        ...movie,
+        // 格式化调整（带B单位）
+        formatted: d3.format("$.2f")(movie.gross / 1e9) + "B"
+      }])
+      .filter(([year, movie]) => movie.gross >= 400000000); // 过滤4亿+
+    const movieMap = new Map(movieByYearFiltered);
+    console.log("best Movie by year:", "rows", movieMap);
+
+    const milestones = new Map([
+      [1937, "Released the first animated feature film 'Snow White and the Seven Dwarfs'"],
+      [1940, "Experimental animation 'Fantasia' combines classical music and animation"],
+      [1950, "'Cinderella' became a symbol of the post-war animation revival"],
+      [1984, "Michael Eisner became CEO"],
+      [1989, "'The Little Mermaid' opened the Disney Renaissance"],
+      [1995, "Cooperated with Pixar to launch first CG animation 'Toy Story'"],
+      [2003, "Released Pixar's 'Finding Nemo'"],
+      [2006, "Acquired Pixar Animation"],
+      [2009, "Acquired Marvel Entertainment"],
+      [2012, "Acquired Lucasfilm"],
+      [2015, "Launched Disney Movies Anywhere"]
+    ]);
+
+
+
+    // 2. Compute total gross per genre, sort and pick top 3
+    const genreTotals = d3.rollups(
+      data,
+      v => d3.sum(v, d => d.gross),
+      d => d.genre
+    ).sort((a,b) => b[1] - a[1]);
+
+    const topGenres = genreTotals.slice(0,4).map(d => d[0]);
+    const allSeries  = [...topGenres, "Others"];
+
+    // 3. Roll up by year & genre
+    const yearGenreRollup = d3.rollups(
+      data,
+      v => d3.sum(v, d => d.gross),
+      d => d.year,
+      d => d.genre
+    );
+    const yearMap = new Map(
+      yearGenreRollup.map(([year, arr]) =>
+        [year, new Map(arr)]
+      )
+    );
+
+    yearGenreRollup.sort((a, b) => d3.ascending(a[0], b[0]));
+
+    // 2. Prepare a “running total” map for each genre
+    const running = new Map();  
+    // (we’ll fill it as we go)
+
+    // 3. Iteratively build a new array of [year, Map<genre, cumulativeGross>]
+    const yearGenreCumsum = yearGenreRollup.map(([year, genreArr]) => {
+      // for each genre in this year’s data, add to its running total
+      genreArr.forEach(([genre, grossThisYear]) => {
+        const prev = running.get(genre) || 0;
+        running.set(genre, prev + grossThisYear);
+      });
+      
+      // capture a snapshot of all running totals so far
+      // (we clone the Map so it won’t get mutated in the next iteration)
+      const snapshot = new Map(running);
+      return [year, snapshot];
+    });
+
+    // 4. Build per‐year table with only top 3 + Others
+    const years = Array.from(yearMap.keys()).sort((a,b) => a - b);
+    const table = years.map(year => {
+      const byGen = yearMap.get(year);
+      // sum of all other genres
+      const sumOthers = d3.sum(
+        Array.from(byGen.entries())
+          .filter(([g]) => !topGenres.includes(g))
+          .map(([,v]) => v)
+      );
+      const row = { year: new Date(year,0,1) };
+      topGenres.forEach(g => {
+        row[g] = byGen.get(g) || 0;
+      });
+      row["Others"] = sumOthers;
+      return row;
+    });
+
+    // 5. Stack layout
+    const stack = d3.stack()
+      .keys(allSeries)
+      .order(d3.stackOrderNone)
+      .offset(d3.stackOffsetNone);
+
+    const series = stack(table);
+
+    // 6. Scales & axes
+    const x = d3.scaleTime()
+      .domain(d3.extent(table, d => d.year))
+      .range([0, width]);
+
+    const y = d3.scaleLinear()
+      .domain([0, d3.max(series, s => d3.max(s, d => d[1]))])
+      .nice()
+      .range([height, 0]);
+
+    const color = d3.scaleOrdinal()
+      .domain(allSeries)
+      // .range(d3.schemeTableau10);
+      .range(d3.schemeSet2);
+
+
+    svg.append("g")
+      .attr("class", "axis")
+      .attr("transform", `translate(0,${height})`)
+      .call(d3.axisBottom(x).ticks(10).tickFormat(d3.timeFormat("%Y")));
+
+    svg.append("g")
+      .attr("class", "axis")
+      .call(d3.axisLeft(y)
+        .ticks(6)
+        .tickFormat(d => "$" + d3.format(".2s")(d).replace("G","B"))
+      );
+
+    // 7. Draw areas (clipped)
+    const area = d3.area()
+      .x(d => x(d.data.year))
+      .y0(d => y(d[0]))
+      .y1(d => y(d[1]));
+
+    svg.append("g")
+      .attr("clip-path", "url(#reveal-clip)")
+      .selectAll(".layer")
+      .data(series)
+      .join("path")
+        .attr("class", "area")
+        .attr("fill", d => color(d.key))
+        .attr("d", area);
+
+    // 8. Legend
+    const legend = svg.append("g")
+      .attr("transform", `translate(${width + 20},0)`);
+
+    allSeries.forEach((g,i) => {
+      const row = legend.append("g")
+        .attr("transform", `translate(0,${i*20})`);
+      row.append("rect")
+        .attr("width", 15)
+        .attr("height", 15)
+        .attr("fill", color(g));
+      row.append("text")
+        .attr("x", 20)
+        .attr("y", 12)
+        .attr("class", "legend")
+        .text(g);
+    });
+
+    // 8.5 创建透明交互层
+    const overlay = svg.append("rect")
+      .attr("class", "overlay")
+      .attr("x", x.range()[0])      // 对齐X轴起点
+      .attr("y", y.range()[1])      // 对齐Y轴底部
+      .attr("width", x.range()[1] - x.range()[0])  // 覆盖整个图表宽度
+      .attr("height", y.range()[0] - y.range()[1]) // 覆盖整个图表高度
+      .style("fill", "none")
+      .style("pointer-events", "all") // 关键：启用事件捕获
+      .style("opacity", 0);          // 保持不可见
+
+    const tooltip = d3.select("body")
+      .append("div")
+      .attr("class", "tooltip")
+      .style("max-width", "280px")  // 新增宽度限制
+      .style("line-height", "1.4")   // 调整行高
+      .style("position", "absolute")
+      .style("background", "white")    //
+      .style("color", "black")        //
+      .style("padding", "8px")
+      .style("border-radius", "2px")
+      .style("font-size", "13px")
+      // .style("box-shadow", "none")    // 移除阴影
+      // .style("border", "none")        // 无边框
+      .style("pointer-events", "none")
+      .style("font-family", "Arial, sans-serif")
+      .style("display", "none");
+
+
+
+    // 交互逻辑
+    overlay
+      .on("mousemove", function(event) {
+        const [xPos] = d3.pointer(event); // 获取鼠标X坐标
+        const date = x.invert(xPos);      // 转换为时间对象
+        const year = date.getFullYear();  // 提取年份
+        
+        // 获取该年度最高票房电影
+        const movie = movieMap.get(year);
+        const milestone = milestones.get(year);
+        console.log("movie", movie);
+        console.log("milestone", milestone);
+
+        let html = "";
+        let hasContent = false;
+        // 通用年份头
+        const yearHeader = `<div style="color:#2b2b2b;font-weight:600;margin-bottom:4px">${year}</div>`;
+        // 电影信息模块
+        if (movie) {
+          html += `
+            <div style="border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:4px">
+              ${yearHeader}
+              <div style="color:#666;margin-top:2px">${movie.title}</div>
+              <div style="color:#c8990a;font-weight:500">${movie.formatted}</div>
+            </div>
+          `;
+          hasContent = true;
+        }
+
+        // 大事记模块（独立显示）
+        if (milestone) {
+
+          // 无电影时添加年份
+          if (!movie) {
+            html += `<div style="margin-bottom:4px">${yearHeader}</div>`;
+          }
+          html += `
+            <div style="${movie ? 'margin-top:6px' : ''};color:#444">
+              <div style="font-size:11px;color:#999">DISNEY MILESTONE</div>
+              <div style="margin-top:2px">${milestone}</div>
+            </div>
+          `;
+          hasContent = true;
+        }
+
+        // 显示逻辑
+        if (hasContent) {
+          tooltip
+            .style("left", `${event.pageX + 15}px`)
+            .style("top", `${event.pageY + 15}px`)
+            .style("display", "block")
+            .html(html);
+        } else {
+          tooltip.style("display", "none");
+        }
+      })
+      .on("mouseout", () => tooltip.style("display", "none"));
+    // ============== 新增代码结束 ============== //
+
+    // 9. Animate reveal
+    svg.select("#reveal-clip rect")
+      .transition()
+      .duration(6000)
+      .attr("width", width);
+
+  }).catch(err => console.error(err));
+  </script>
+</body>
+</html>

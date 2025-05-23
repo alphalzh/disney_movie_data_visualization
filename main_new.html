@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>D3 Visualization Switcher – Centered Layout</title>
+<script src="d3.v7.min.js"></script>
+<script src="d3-v6-tip.js"></script>
+<link rel="stylesheet" href="d3-tip.css">
+
+<style>
+  svg { display: block; margin: auto; }
+    .axis path, .axis line { stroke: #aaa; }
+    .axis text { font-size: 12px; }
+    .legend { font-size: 12px; fill: #333; }
+    .tooltip { pointer-events: none; font-size: 14px; fill: #000; font-weight: bold; }
+    .hover-label { font-size: 12px; fill: #000; font-weight: bold; text-anchor: middle; }
+    .genre-item rect { fill: #f5f5f5; stroke: #ccc; rx: 4; ry: 4; }
+    .genre-item text { font-size: 12px; fill: #333; pointer-events: none; }
+    .genre-item:hover rect { fill: #e0e0e0; cursor: pointer; }
+/* ---------- overall page ---------- */
+body{
+  margin:0;
+  font-family:sans-serif;
+  background:#fafafa;
+  display:flex;                 /* let body behave like a flex-box */
+  justify-content:center;       /* horizontal centering */
+  align-items:center;           /* vertical   centering */
+  min-height:100vh;             /* full-viewport height */
+}
+
+/* ---------- wrapper holding canvas + selector ---------- */
+#wrapper{
+  width:800px;
+  display:flex;
+  flex-direction:column;        /* stack canvas & selector vertically */
+  align-items:center;
+}
+
+/* ---------- main canvas ---------- */
+#viz-container{
+  width:100%;
+  height:500px;
+  position:relative;
+  display:flex;justify-content:center;align-items:center;
+}
+
+/* ---------- selector bar ---------- */
+#nav{
+  width:100%;
+  height:90px;
+  margin-top:24px;              /* <-- distance UNDER the canvas */
+}
+
+/* ---------- dot + label styles (unchanged) ---------- */
+.dot{fill:#888;transition:fill .2s;}
+.label{font-size:14px;text-anchor:middle;opacity:.5;user-select:none;}
+</style>
+</head>
+<body>
+<div id="wrapper">
+  <div id="viz-container"></div>
+  <svg id="nav"></svg>
+</div>
+
+<script>
+/* ------------------------------------------------------------------
+   everything below is identical to the previous answer
+------------------------------------------------------------------ */
+const visualizations = [
+  {id:0, name:"平均票房聚类散点图"},
+  {id:1, name:"总票房堆叠折线图"},
+  {id:2, name:"票房榜追逐条形图"}
+];
+
+function clearCanvas(){ d3.select("#viz-container").selectAll("*").remove(); }
+
+function renderFixedPicture() {
+    clearCanvas();
+
+    
+    // draw whatever fixed picture you like:
+    const svg = d3.select("#viz-container").append("svg")
+
+    svg.append("defs")
+      .append("clipPath")
+        .attr("id", "rounded-corners")
+      .append("rect")
+        .attr("x", 0)
+        .attr("y", 0)
+        .attr("width", 480)   // match your image width
+        .attr("height", 360)  // match your image height
+        .attr("rx", 20)       // corner radius X
+        .attr("ry", 20);      // corner radius Y
+    svg.attr("width", 480).attr("height",360)
+        .append("image")
+        .attr("href","disney_logo.jpg")
+        .style("opacity", 0)
+        .attr("clip-path", "url(#rounded-corners)")
+        .transition()
+        .duration(800)
+        .style("opacity", 1);
+        
+    // maybe overlay your nav instructions here...
+  }
+
+function renderDisneyScatter() {
+  clearCanvas();
+  const dataUrl = 'disney_movies_total_gross.csv';
+  const svgEl = d3.select("#viz-container").append("svg");
+  const margin = { top: 60, right: 350, bottom: 100, left: 80 };
+  const width  = 950 - margin.left - margin.right;
+  const height = 550 - margin.top  - margin.bottom;
+  const svg = svgEl
+    .attr("width",  width + margin.left + margin.right)
+    .attr("height", height + margin.top  + margin.bottom)
+    .append("g")
+    .attr("transform", `translate(${margin.left},${margin.top})`);
+
+  // LOAD & PREPROCESS
+  d3.csv("disney_movies_total_gross.csv").then(raw => {
+    raw.forEach(d => {
+      let r = d.MPAA_rating;
+      if (!r || r === "Unrated" || r === "Not Rated") r = "Not Rated";
+      d.rating = r;
+      d.genre = d.genre || "Unknown";
+      d.gross = +d.inflation_adjusted_gross.replace(/[$,]/g, "");
+    });
+
+    const allRatings = ["Not Rated", "G", "PG", "PG-13", "R"];
+    const scheme = d3.schemeSet3;
+    const colorRating = d3.scaleOrdinal()
+    .domain(allRatings)
+    .range([
+      scheme[2],  // G
+      scheme[0],  // Not Rated
+      scheme[1],  // PG
+      scheme[5],  // PG-13
+      scheme[3]   // R
+    ]);
+
+    const dataMap = d3.rollups(
+      raw.filter(d => d.genre && !isNaN(d.gross)),
+      v => ({ count: v.length, totalGross: d3.sum(v, d => d.gross), averageGross: d3.mean(v, d => d.gross) }),
+      d => d.genre
+    );
+    const data = dataMap.map(([genre, stats]) => ({ ...stats, genre }));
+
+    const genreRating = new Map(
+      d3.rollups(
+        raw.filter(d => d.genre && d.rating && !isNaN(d.gross)),
+        v => d3.rollups(v, vv => d3.sum(vv, d => d.gross), d => d.rating),
+        d => d.genre
+      ).map(([g, arr]) => [ g, arr.map(([rating, sum]) => ({ rating, sum })) ])
+    );
+
+    // SCALES
+    const x = d3.scaleLinear().domain([0, d3.max(data, d => d.count) * 1.1]).range([70, width]);
+    const y = d3.scaleLinear().domain([0, d3.max(data, d => d.averageGross) * 1.1]).range([height, 0]);
+    const maxGross = d3.max(data, d => d.totalGross);
+    const color = d3.scaleSequential(d3.interpolateBlues).domain([0, maxGross]);
+    const rScale = d3.scaleSqrt().domain([0, maxGross]).range([4, 20]);
+    const sortedData = [...data].sort((a,b) => b.totalGross - a.totalGross);
+
+    const tip = d3.tip()
+        .attr('class', 'd3-tip')
+        //.direction('s')
+        .html((event, d) => `<div><b>${d.genre}</b></div>
+                    <div>Total Gross: ${d3.format(".2s")(d.totalGross).replace("G","B")}</div>
+                    <div>Average Gross: ${d3.format(".2s")(d.averageGross).replace("G","B")}</div>
+                    <div>Number of Movies: ${d.count}</div>`);
+    svg.call(tip);
+
+    // AXES
+    svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x).ticks(8))
+      .append("text").attr("x", width/2+50).attr("y", 40).attr("fill", "#000").attr("text-anchor","middle").text("Number of Movies");
+    svg.append("g").attr("transform", `translate(70,0)`).call(d3.axisLeft(y).ticks(8).tickFormat(d => "$" + d3.format(".2s")(d).replace("G","B")))
+      .append("text").attr("transform","rotate(-90)").attr("x", -height/2).attr("y", -50).attr("fill","#000").attr("text-anchor","middle").text("Average Inflation-Adjusted Gross");
+
+    // SCATTER LEGENDS
+    const defs = svg.append("defs");
+    const gradient = defs.append("linearGradient").attr("id","color-gradient").attr("x1","0%").attr("y1","0%").attr("x2","100%").attr("y2","0%");
+    d3.range(0,1.01,0.1).forEach(t => gradient.append("stop").attr("offset",`${t*100}%`).attr("stop-color", color(t*maxGross)));
+    const legendX = width + 35;
+    const lg = svg.append("g").attr("transform", `translate(${legendX},0)`);
+    const cbW = 150, cbH = 18;
+    lg.append("text").attr("class","legend").attr("x",0).attr("y",30).text("Total Gross (color)");
+    lg.append("rect").attr("x",0).attr("y",40).attr("width", cbW).attr("height", cbH).style("fill","url(#color-gradient)");
+    lg.append("g").attr("transform",`translate(0,${40+cbH})`).call(d3.axisBottom(d3.scaleLinear().domain([0,25]).range([0,cbW])).ticks(5).tickFormat(d=>`$${d}B`));
+    const sizeY = 45 + cbH + 80;
+    lg.append("text").attr("class","legend").attr("x",0).attr("y",sizeY).text("Total Gross (size)");
+    const sizes = [maxGross*0.1, maxGross*0.5, maxGross];
+    const sl = lg.append("g").attr("transform", `translate(0,${sizeY+32})`);
+    sl.selectAll("circle").data(sizes).enter().append("circle").attr("cx",(d,i)=>i*55 + rScale(d)).attr("cy",0).attr("r",d=>rScale(d)).attr("fill",d=>color(d)).attr("stroke","#333");
+    sl.selectAll("text.size-label").data(sizes).enter().append("text").attr("x",(d,i)=>i*55+rScale(d)).attr("y",d=>rScale(d)+15).attr("text-anchor","middle").text(d=>"$"+d3.format(".2s")(d).replace("G","B")).attr("font-size","12");
+
+    // GLOBAL PIE & LEGEND under scatter legends
+    //const staticPie = svg.append("g").attr("class","static-pie").attr("transform", `translate(${legendX},${sizeY+100})`);
+    const pieLegend = svg.append("g").attr("class","pie-legend").attr("transform", `translate(${legendX},${sizeY+120})`);
+
+    allRatings.forEach((r, i) => {
+        const row = pieLegend.append("g")
+          .attr("transform", `translate(0,${i*20})`);
+
+        row.append("rect")
+          .attr("width", 12)
+          .attr("height", 12)
+          .attr("fill", colorRating(r));
+
+        row.append("text")
+          .attr("x", 18)
+          .attr("y", 10)
+          .text(r)
+          .attr("font-size", "12px");
+      });
+
+
+    function hoverOn(event, d, mode) {
+      // dim others
+      const name = `anim-${Date.now()}`;
+      circles.transition(name).duration(300).attr("opacity",0.15);
+      const thisCircle = circles.filter(dd=>dd.genre===d.genre).raise();   
+      const newR = rScale(d.totalGross) * 1.5+15;
+      thisCircle.transition(name).duration(300).attr("r", newR).attr("opacity",1);
+      // inner pie
+      const breakdown = genreRating.get(d.genre) || [];
+      pieGroup.selectAll("*").remove();
+      const [cx, cy] = [x(d.count), y(d.averageGross)];
+      pieGroup.attr("transform", `translate(${cx},${cy})`);
+      pieGroup.selectAll("path").data(pie(breakdown)).enter().append("path")
+        .attr("d", arc.innerRadius(0).outerRadius(newR*1.6))
+        .attr("fill", arcData=>colorRating(arcData.data.rating))
+        .attr("stroke","#fff").attr("stroke-width",1)
+        .style("opacity",0).transition(name).duration(300).style("opacity",1);
+      if (mode === "circle") {
+        tip.offset([-newR*1.6,-0]);
+      }
+      else {
+        tip.offset([-7,0]);
+      }
+      tip.show(event, d);
+      
+      pieGroup.transition(name).duration(300).style("opacity",1);
+      pieGroup.raise();
+      thisCircle.raise();
+      // hover label
+      //svg.append("text").attr("class","hover-label").attr("x", cx).attr("y", cy - newR - 10)
+      //  .text(`${d.genre}:\n ${d.count} movies\n $${d3.format(",.0f")(d.averageGross)} avg`);
+      // update static pie and legend
+    }
+
+    function hoverOff(d) {
+      tip.hide();
+      const name = `anim-off-${Date.now()}`;
+      const name2 = `anim-off-2-${Date.now()}`;
+      circles.transition(name).duration(300).attr("opacity",1).attr("r", d=>rScale(d.totalGross));
+      pieGroup.transition(name).duration(300).style("opacity",0);
+      //svg.selectAll(".hover-label").remove();
+    }
+
+    // INNER PIE & INTERACTION
+    const pieGroup = svg.append("g").attr("class","pie-group").style("pointer-events","none").style("opacity",0);
+    const pieR = 60;
+    const pie = d3.pie().value(d=>d.sum);
+    const arc = d3.arc();
+    const circles = svg.selectAll(".point").data(data, d=>d.genre).enter().append("circle").attr("class","point")
+      .attr("cx", d=>x(d.count)).attr("cy", y(0)).attr("r",0)
+      .attr("fill", d=>color(d.totalGross)).attr("stroke","#333").attr("stroke-width",1)
+      .attr("opacity",1)
+      .on("mouseover", (e,d)=>hoverOn(e, d, "circle"))
+      .on("mouseout", (e,d)=>hoverOff(d))
+      .style("cursor", "pointer")
+      .on("click", (event, d) => {
+        const url = `genre_details.html?genre=${encodeURIComponent(d.genre)}`;
+        window.open(url, "_blank");
+      });
+    circles.transition("raise").delay((d,i)=>i*100).duration(1000)
+      .attr("cy", d=>y(d.averageGross)).attr("r", d=>rScale(d.totalGross));
+
+    // VERTICAL GENRE LIST
+    const listGroup = svg.append("g").attr("class","genre-list").attr("transform", `translate(${-margin.left},0)`);
+    const itemHeight = 24;
+    const genreItems = listGroup.selectAll(".genre-item").data(sortedData).enter().append("g").attr("class","genre-item")
+      .attr("transform", (d,i)=>`translate(1,${i*(itemHeight+8)})`)
+      .on("mouseover", (e,d)=>hoverOn(e, d, "list"))
+      .on("mouseout", ()=>hoverOff())
+      .style("cursor", "pointer")
+      .on("click", (event, d) => {
+        const url = `genre_details.html?genre=${encodeURIComponent(d.genre)}`;
+        window.open(url, "_blank");
+      });
+    genreItems.append("rect").attr("width", margin.left-5).attr("height", itemHeight-3)
+      .attr("rx",4).attr("ry",4);
+    genreItems.append("text").attr("x",5).attr("y", itemHeight/2+2).style('font-size', '8').text(d => d.genre.split('/').pop());
+  }).catch(err=>console.error(err));
+}
+
+function drawBarChart(){ /* … same stub as before … */ clearCanvas();
+  const svg=d3.select("#viz-container").append("svg")
+              .attr("width","100%").attr("height","100%");
+  const data=[5,8,3,7,2], x=d3.scaleBand().domain(d3.range(data.length))
+              .range([40,760]).padding(.3),
+        y=d3.scaleLinear().domain([0,10]).range([300,50]);
+  svg.selectAll("rect").data(data).enter().append("rect")
+     .attr("x",(d,i)=>x(i)).attr("y",d=>y(d))
+     .attr("width",x.bandwidth()).attr("height",d=>y(0)-y(d))
+     .attr("fill","#64b5f6"); }
+
+function drawScatterPlot(){ /* … */ clearCanvas();
+  const svg=d3.select("#viz-container").append("svg")
+              .attr("width","100%").attr("height","100%");
+  const pts=d3.range(40).map(()=>[Math.random()*700+50,Math.random()*250+50]);
+  svg.selectAll("circle").data(pts).enter().append("circle")
+     .attr("cx",d=>d[0]).attr("cy",d=>d[1]).attr("r",6).attr("fill","#ff7043"); }
+
+function drawHeatmap(){ /* … */ clearCanvas();
+  const svg=d3.select("#viz-container").append("svg")
+              .attr("width","100%").attr("height","100%");
+  const n=8,cell=40,color=d3.scaleSequential(d3.interpolateViridis).domain([0,1]);
+  svg.selectAll("rect").data(d3.cross(d3.range(n),d3.range(n))).enter().append("rect")
+     .attr("x",d=>60+d[0]*cell).attr("y",d=>60+d[1]*cell)
+     .attr("width",cell-2).attr("height",cell-2)
+     .attr("fill",()=>color(Math.random())); }
+
+const drawers={0:renderDisneyScatter,1:renderDisneyScatter,2:drawHeatmap};
+
+const w=800,h=90,r=12,gap=180,cy=45,firstX=w/2-((visualizations.length-1)*gap)/2;
+const svgNav=d3.select("#nav").attr("viewBox",`0 0 ${w} ${h}`);
+const gNav=svgNav.append("g").attr("transform",`translate(0,${cy})`);
+let currentView = null;  // null => fixed picture
+
+gNav.append("line").attr("x1",firstX).attr("x2",firstX+(visualizations.length-1)*gap)
+    .attr("y1",0).attr("y2",0).attr("stroke","#ddd")
+    .attr("stroke-width",8).attr("stroke-linecap","round");
+
+const dots=gNav.selectAll("g.dotGroup").data(visualizations).enter().append("g")
+  .attr("class","dotGroup")
+  .attr("transform",(d,i)=>`translate(${firstX+i*gap},0)`)
+  .attr("data-view",d=>d.id)
+  .style("cursor","pointer");
+
+dots.append("circle").attr("class","dot").attr("r",r);
+dots.append("text").attr("class","label").attr("y",r+23).text(d=>d.name);
+
+dots
+  .on("mouseover", function(e, d) {
+    // always enlarge & highlight on hover
+    d3.select(this).select("circle")
+      .transition().duration(200)
+      .attr("r", r * 1.5)
+      .style("fill", "#3f3f3f");
+    d3.select(this).select("text")
+      .transition().duration(200)
+      .style("opacity", 1);
+  })
+  .on("mouseout", function(e, d) {
+    // only revert if *not* currently selected
+    if (!d3.select(this).classed("selected")) {
+      d3.select(this).select("circle")
+        .transition().duration(200)
+        .attr("r", r)
+        .style("fill", "#888");
+      d3.select(this).select("text")
+        .transition().duration(200)
+        .style("opacity", 0.5);
+    }
+  })
+  .on("click", function(e, d) {
+    const view = d3.select(this).attr("data-view");
+    // 1) unselect everything
+    if (currentView === view) {
+        // clicked twice: go back to fixed
+        dots.classed("selected", false)
+        .select("circle")
+        .transition().duration(200)
+        .attr("r", r)
+        .style("fill", "#888");
+        dots.select("text")
+          .transition().duration(200)
+          .style("opacity", 0.5);
+        renderFixedPicture();
+        currentView = null;
+      }
+    else {
+      dots.classed("selected", false)
+        .select("circle")
+        .transition().duration(200)
+        .attr("r", r)
+        .style("fill", "#888");
+      dots.select("text")
+        .transition().duration(200)
+        .style("opacity", 0.5);
+
+      // 2) mark this one selected
+      d3.select(this).classed("selected", true);
+      d3.select(this).select("circle")
+        .transition().duration(200)
+        .attr("r", r * 1.5)
+        .style("fill", "#3f3f3f");
+      d3.select(this).select("text")
+        .transition().duration(200)
+        .style("opacity", 1);
+
+      // 3) your existing drawer callback
+      drawers[d.id]();
+      currentView = view;
+    }
+  });
+renderFixedPicture();                       // initial view
+</script>
+</body>
+</html>

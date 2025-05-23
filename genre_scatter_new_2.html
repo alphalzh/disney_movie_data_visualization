@@ -29,187 +29,191 @@
   const height = 600 - margin.top  - margin.bottom;
 
   // SVG CANVAS
-  const svg = d3.select("#chart")
-    .attr("width",  width + margin.left + margin.right)
-    .attr("height", height + margin.top  + margin.bottom)
-    .append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`);
+  function renderDisneyScatter(containerId, dataUrl = 'disney_movies_total_gross.csv') {
+    const svgEl = d3.select(containerId);
+    const svg = d3.select("#chart")
+      .attr("width",  width + margin.left + margin.right)
+      .attr("height", height + margin.top  + margin.bottom)
+      .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
 
-  // LOAD & PREPROCESS
-  d3.csv("disney_movies_total_gross.csv").then(raw => {
-    raw.forEach(d => {
-      let r = d.MPAA_rating;
-      if (!r || r === "Unrated" || r === "Not Rated") r = "Not Rated";
-      d.rating = r;
-      d.genre = d.genre || "Unknown";
-      d.gross = +d.inflation_adjusted_gross.replace(/[$,]/g, "");
-    });
+    // LOAD & PREPROCESS
+    d3.csv("disney_movies_total_gross.csv").then(raw => {
+      raw.forEach(d => {
+        let r = d.MPAA_rating;
+        if (!r || r === "Unrated" || r === "Not Rated") r = "Not Rated";
+        d.rating = r;
+        d.genre = d.genre || "Unknown";
+        d.gross = +d.inflation_adjusted_gross.replace(/[$,]/g, "");
+      });
 
-    const allRatings = ["Not Rated", "G", "PG", "PG-13", "R"];
-    const scheme = d3.schemeSet3;
-    const colorRating = d3.scaleOrdinal()
-    .domain(allRatings)
-    .range([
-      scheme[2],  // G
-      scheme[0],  // Not Rated
-      scheme[1],  // PG
-      scheme[5],  // PG-13
-      scheme[3]   // R
-    ]);
+      const allRatings = ["Not Rated", "G", "PG", "PG-13", "R"];
+      const scheme = d3.schemeSet3;
+      const colorRating = d3.scaleOrdinal()
+      .domain(allRatings)
+      .range([
+        scheme[2],  // G
+        scheme[0],  // Not Rated
+        scheme[1],  // PG
+        scheme[5],  // PG-13
+        scheme[3]   // R
+      ]);
 
-    const dataMap = d3.rollups(
-      raw.filter(d => d.genre && !isNaN(d.gross)),
-      v => ({ count: v.length, totalGross: d3.sum(v, d => d.gross), averageGross: d3.mean(v, d => d.gross) }),
-      d => d.genre
-    );
-    const data = dataMap.map(([genre, stats]) => ({ ...stats, genre }));
-
-    const genreRating = new Map(
-      d3.rollups(
-        raw.filter(d => d.genre && d.rating && !isNaN(d.gross)),
-        v => d3.rollups(v, vv => d3.sum(vv, d => d.gross), d => d.rating),
+      const dataMap = d3.rollups(
+        raw.filter(d => d.genre && !isNaN(d.gross)),
+        v => ({ count: v.length, totalGross: d3.sum(v, d => d.gross), averageGross: d3.mean(v, d => d.gross) }),
         d => d.genre
-      ).map(([g, arr]) => [ g, arr.map(([rating, sum]) => ({ rating, sum })) ])
-    );
+      );
+      const data = dataMap.map(([genre, stats]) => ({ ...stats, genre }));
 
-    // SCALES
-    const x = d3.scaleLinear().domain([0, d3.max(data, d => d.count) * 1.1]).range([70, width]);
-    const y = d3.scaleLinear().domain([0, d3.max(data, d => d.averageGross) * 1.1]).range([height, 0]);
-    const maxGross = d3.max(data, d => d.totalGross);
-    const color = d3.scaleSequential(d3.interpolateBlues).domain([0, maxGross]);
-    const rScale = d3.scaleSqrt().domain([0, maxGross]).range([4, 20]);
-    const sortedData = [...data].sort((a,b) => b.totalGross - a.totalGross);
+      const genreRating = new Map(
+        d3.rollups(
+          raw.filter(d => d.genre && d.rating && !isNaN(d.gross)),
+          v => d3.rollups(v, vv => d3.sum(vv, d => d.gross), d => d.rating),
+          d => d.genre
+        ).map(([g, arr]) => [ g, arr.map(([rating, sum]) => ({ rating, sum })) ])
+      );
 
-    const tip = d3.tip()
-        .attr('class', 'd3-tip')
-        //.direction('s')
-        .html((event, d) => `<div><b>${d.genre}</b></div>
-                    <div>Total Gross: ${d3.format(".2s")(d.totalGross).replace("G","B")}</div>
-                    <div>Average Gross: ${d3.format(".2s")(d.averageGross).replace("G","B")}</div>
-                    <div>Number of Movies: ${d.count}</div>`);
-    svg.call(tip);
+      // SCALES
+      const x = d3.scaleLinear().domain([0, d3.max(data, d => d.count) * 1.1]).range([70, width]);
+      const y = d3.scaleLinear().domain([0, d3.max(data, d => d.averageGross) * 1.1]).range([height, 0]);
+      const maxGross = d3.max(data, d => d.totalGross);
+      const color = d3.scaleSequential(d3.interpolateBlues).domain([0, maxGross]);
+      const rScale = d3.scaleSqrt().domain([0, maxGross]).range([4, 20]);
+      const sortedData = [...data].sort((a,b) => b.totalGross - a.totalGross);
 
-    // AXES
-    svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x).ticks(8))
-      .append("text").attr("x", width/2).attr("y", 40).attr("fill", "#000").attr("text-anchor","middle").text("Number of Movies");
-    svg.append("g").attr("transform", `translate(70,0)`).call(d3.axisLeft(y).ticks(8).tickFormat(d => "$" + d3.format(".2s")(d).replace("G","B")))
-      .append("text").attr("transform","rotate(-90)").attr("x", -height/2).attr("y", -50).attr("fill","#000").attr("text-anchor","middle").text("Average Inflation-Adjusted Gross");
+      const tip = d3.tip()
+          .attr('class', 'd3-tip')
+          //.direction('s')
+          .html((event, d) => `<div><b>${d.genre}</b></div>
+                      <div>Total Gross: ${d3.format(".2s")(d.totalGross).replace("G","B")}</div>
+                      <div>Average Gross: ${d3.format(".2s")(d.averageGross).replace("G","B")}</div>
+                      <div>Number of Movies: ${d.count}</div>`);
+      svg.call(tip);
 
-    // SCATTER LEGENDS
-    const defs = svg.append("defs");
-    const gradient = defs.append("linearGradient").attr("id","color-gradient").attr("x1","0%").attr("y1","0%").attr("x2","100%").attr("y2","0%");
-    d3.range(0,1.01,0.1).forEach(t => gradient.append("stop").attr("offset",`${t*100}%`).attr("stop-color", color(t*maxGross)));
-    const legendX = width + 55;
-    const lg = svg.append("g").attr("transform", `translate(${legendX},0)`);
-    const cbW = 150, cbH = 18;
-    lg.append("text").attr("class","legend").attr("x",0).attr("y",30).text("Total Gross (color)");
-    lg.append("rect").attr("x",0).attr("y",40).attr("width", cbW).attr("height", cbH).style("fill","url(#color-gradient)");
-    lg.append("g").attr("transform",`translate(0,${40+cbH})`).call(d3.axisBottom(d3.scaleLinear().domain([0,25]).range([0,cbW])).ticks(5).tickFormat(d=>`$${d}B`));
-    const sizeY = 45 + cbH + 80;
-    lg.append("text").attr("class","legend").attr("x",0).attr("y",sizeY).text("Total Gross (size)");
-    const sizes = [maxGross*0.1, maxGross*0.5, maxGross];
-    const sl = lg.append("g").attr("transform", `translate(0,${sizeY+32})`);
-    sl.selectAll("circle").data(sizes).enter().append("circle").attr("cx",(d,i)=>i*60 + rScale(d)).attr("cy",0).attr("r",d=>rScale(d)).attr("fill",d=>color(d)).attr("stroke","#333");
-    sl.selectAll("text.size-label").data(sizes).enter().append("text").attr("x",(d,i)=>i*60+rScale(d)).attr("y",d=>rScale(d)+15).attr("text-anchor","middle").text(d=>"$"+d3.format(".2s")(d).replace("G","B")).attr("font-size","0.8em");
+      // AXES
+      svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x).ticks(8))
+        .append("text").attr("x", width/2).attr("y", 40).attr("fill", "#000").attr("text-anchor","middle").text("Number of Movies");
+      svg.append("g").attr("transform", `translate(70,0)`).call(d3.axisLeft(y).ticks(8).tickFormat(d => "$" + d3.format(".2s")(d).replace("G","B")))
+        .append("text").attr("transform","rotate(-90)").attr("x", -height/2).attr("y", -50).attr("fill","#000").attr("text-anchor","middle").text("Average Inflation-Adjusted Gross");
 
-    // GLOBAL PIE & LEGEND under scatter legends
-    //const staticPie = svg.append("g").attr("class","static-pie").attr("transform", `translate(${legendX},${sizeY+100})`);
-    const pieLegend = svg.append("g").attr("class","pie-legend").attr("transform", `translate(${legendX},${sizeY+120})`);
+      // SCATTER LEGENDS
+      const defs = svg.append("defs");
+      const gradient = defs.append("linearGradient").attr("id","color-gradient").attr("x1","0%").attr("y1","0%").attr("x2","100%").attr("y2","0%");
+      d3.range(0,1.01,0.1).forEach(t => gradient.append("stop").attr("offset",`${t*100}%`).attr("stop-color", color(t*maxGross)));
+      const legendX = width + 55;
+      const lg = svg.append("g").attr("transform", `translate(${legendX},0)`);
+      const cbW = 150, cbH = 18;
+      lg.append("text").attr("class","legend").attr("x",0).attr("y",30).text("Total Gross (color)");
+      lg.append("rect").attr("x",0).attr("y",40).attr("width", cbW).attr("height", cbH).style("fill","url(#color-gradient)");
+      lg.append("g").attr("transform",`translate(0,${40+cbH})`).call(d3.axisBottom(d3.scaleLinear().domain([0,25]).range([0,cbW])).ticks(5).tickFormat(d=>`$${d}B`));
+      const sizeY = 45 + cbH + 80;
+      lg.append("text").attr("class","legend").attr("x",0).attr("y",sizeY).text("Total Gross (size)");
+      const sizes = [maxGross*0.1, maxGross*0.5, maxGross];
+      const sl = lg.append("g").attr("transform", `translate(0,${sizeY+32})`);
+      sl.selectAll("circle").data(sizes).enter().append("circle").attr("cx",(d,i)=>i*60 + rScale(d)).attr("cy",0).attr("r",d=>rScale(d)).attr("fill",d=>color(d)).attr("stroke","#333");
+      sl.selectAll("text.size-label").data(sizes).enter().append("text").attr("x",(d,i)=>i*60+rScale(d)).attr("y",d=>rScale(d)+15).attr("text-anchor","middle").text(d=>"$"+d3.format(".2s")(d).replace("G","B")).attr("font-size","0.8em");
 
-    allRatings.forEach((r, i) => {
-        const row = pieLegend.append("g")
-          .attr("transform", `translate(0,${i*20})`);
+      // GLOBAL PIE & LEGEND under scatter legends
+      //const staticPie = svg.append("g").attr("class","static-pie").attr("transform", `translate(${legendX},${sizeY+100})`);
+      const pieLegend = svg.append("g").attr("class","pie-legend").attr("transform", `translate(${legendX},${sizeY+120})`);
 
-        row.append("rect")
-          .attr("width", 12)
-          .attr("height", 12)
-          .attr("fill", colorRating(r));
+      allRatings.forEach((r, i) => {
+          const row = pieLegend.append("g")
+            .attr("transform", `translate(0,${i*20})`);
 
-        row.append("text")
-          .attr("x", 18)
-          .attr("y", 10)
-          .text(r);
-      });
+          row.append("rect")
+            .attr("width", 12)
+            .attr("height", 12)
+            .attr("fill", colorRating(r));
+
+          row.append("text")
+            .attr("x", 18)
+            .attr("y", 10)
+            .text(r);
+        });
 
 
-    function hoverOn(event, d, mode) {
-      // dim others
-      const name = `anim-${Date.now()}`;
-      circles.transition(name).duration(300).attr("opacity",0.15);
-      const thisCircle = circles.filter(dd=>dd.genre===d.genre).raise();   
-      const newR = rScale(d.totalGross) * 1.5+15;
-      thisCircle.transition(name).duration(300).attr("r", newR).attr("opacity",1);
-      // inner pie
-      const breakdown = genreRating.get(d.genre) || [];
-      pieGroup.selectAll("*").remove();
-      const [cx, cy] = [x(d.count), y(d.averageGross)];
-      pieGroup.attr("transform", `translate(${cx},${cy})`);
-      pieGroup.selectAll("path").data(pie(breakdown)).enter().append("path")
-        .attr("d", arc.innerRadius(0).outerRadius(newR*1.6))
-        .attr("fill", arcData=>colorRating(arcData.data.rating))
-        .attr("stroke","#fff").attr("stroke-width",1)
-        .style("opacity",0).transition(name).duration(300).style("opacity",1);
-      if (mode === "circle") {
-        tip.offset([-newR*1.6,-0]);
+      function hoverOn(event, d, mode) {
+        // dim others
+        const name = `anim-${Date.now()}`;
+        circles.transition(name).duration(300).attr("opacity",0.15);
+        const thisCircle = circles.filter(dd=>dd.genre===d.genre).raise();   
+        const newR = rScale(d.totalGross) * 1.5+15;
+        thisCircle.transition(name).duration(300).attr("r", newR).attr("opacity",1);
+        // inner pie
+        const breakdown = genreRating.get(d.genre) || [];
+        pieGroup.selectAll("*").remove();
+        const [cx, cy] = [x(d.count), y(d.averageGross)];
+        pieGroup.attr("transform", `translate(${cx},${cy})`);
+        pieGroup.selectAll("path").data(pie(breakdown)).enter().append("path")
+          .attr("d", arc.innerRadius(0).outerRadius(newR*1.6))
+          .attr("fill", arcData=>colorRating(arcData.data.rating))
+          .attr("stroke","#fff").attr("stroke-width",1)
+          .style("opacity",0).transition(name).duration(300).style("opacity",1);
+        if (mode === "circle") {
+          tip.offset([-newR*1.6,-0]);
+        }
+        else {
+          tip.offset([-7,0]);
+        }
+        tip.show(event, d);
+        
+        pieGroup.transition(name).duration(300).style("opacity",1);
+        pieGroup.raise();
+        thisCircle.raise();
+        // hover label
+        //svg.append("text").attr("class","hover-label").attr("x", cx).attr("y", cy - newR - 10)
+        //  .text(`${d.genre}:\n ${d.count} movies\n $${d3.format(",.0f")(d.averageGross)} avg`);
+        // update static pie and legend
       }
-      else {
-        tip.offset([-7,0]);
+
+      function hoverOff(d) {
+        tip.hide();
+        const name = `anim-off-${Date.now()}`;
+        const name2 = `anim-off-2-${Date.now()}`;
+        circles.transition(name).duration(300).attr("opacity",1).attr("r", d=>rScale(d.totalGross));
+        pieGroup.transition(name).duration(300).style("opacity",0);
+        //svg.selectAll(".hover-label").remove();
       }
-      tip.show(event, d);
-      
-      pieGroup.transition(name).duration(300).style("opacity",1);
-      pieGroup.raise();
-      thisCircle.raise();
-      // hover label
-      //svg.append("text").attr("class","hover-label").attr("x", cx).attr("y", cy - newR - 10)
-      //  .text(`${d.genre}:\n ${d.count} movies\n $${d3.format(",.0f")(d.averageGross)} avg`);
-      // update static pie and legend
-    }
 
-    function hoverOff(d) {
-      tip.hide();
-      const name = `anim-off-${Date.now()}`;
-      const name2 = `anim-off-2-${Date.now()}`;
-      circles.transition(name).duration(300).attr("opacity",1).attr("r", d=>rScale(d.totalGross));
-      pieGroup.transition(name).duration(300).style("opacity",0);
-      //svg.selectAll(".hover-label").remove();
-    }
+      // INNER PIE & INTERACTION
+      const pieGroup = svg.append("g").attr("class","pie-group").style("pointer-events","none").style("opacity",0);
+      const pieR = 60;
+      const pie = d3.pie().value(d=>d.sum);
+      const arc = d3.arc();
+      const circles = svg.selectAll(".point").data(data, d=>d.genre).enter().append("circle").attr("class","point")
+        .attr("cx", d=>x(d.count)).attr("cy", y(0)).attr("r",0)
+        .attr("fill", d=>color(d.totalGross)).attr("stroke","#333").attr("stroke-width",1)
+        .attr("opacity",1)
+        .on("mouseover", (e,d)=>hoverOn(e, d, "circle"))
+        .on("mouseout", (e,d)=>hoverOff(d))
+        .style("cursor", "pointer")
+        .on("click", (event, d) => {
+          const url = `genre_details.html?genre=${encodeURIComponent(d.genre)}`;
+          window.open(url, "_blank");
+        });
+      circles.transition("raise").delay((d,i)=>i*100).duration(1000)
+        .attr("cy", d=>y(d.averageGross)).attr("r", d=>rScale(d.totalGross));
 
-    // INNER PIE & INTERACTION
-    const pieGroup = svg.append("g").attr("class","pie-group").style("pointer-events","none").style("opacity",0);
-    const pieR = 60;
-    const pie = d3.pie().value(d=>d.sum);
-    const arc = d3.arc();
-    const circles = svg.selectAll(".point").data(data, d=>d.genre).enter().append("circle").attr("class","point")
-      .attr("cx", d=>x(d.count)).attr("cy", y(0)).attr("r",0)
-      .attr("fill", d=>color(d.totalGross)).attr("stroke","#333").attr("stroke-width",1)
-      .attr("opacity",1)
-      .on("mouseover", (e,d)=>hoverOn(e, d, "circle"))
-      .on("mouseout", (e,d)=>hoverOff(d))
-      .style("cursor", "pointer")
-      .on("click", (event, d) => {
-        const url = `genre_details.html?genre=${encodeURIComponent(d.genre)}`;
-        window.open(url, "_blank");
-      });
-    circles.transition("raise").delay((d,i)=>i*100).duration(1000)
-      .attr("cy", d=>y(d.averageGross)).attr("r", d=>rScale(d.totalGross));
-
-    // VERTICAL GENRE LIST
-    const listGroup = svg.append("g").attr("class","genre-list").attr("transform", `translate(${-margin.left},0)`);
-    const itemHeight = 24;
-    const genreItems = listGroup.selectAll(".genre-item").data(sortedData).enter().append("g").attr("class","genre-item")
-      .attr("transform", (d,i)=>`translate(1,${i*(itemHeight+8)})`)
-      .on("mouseover", (e,d)=>hoverOn(e, d, "list"))
-      .on("mouseout", ()=>hoverOff())
-      .style("cursor", "pointer")
-      .on("click", (event, d) => {
-        const url = `genre_details.html?genre=${encodeURIComponent(d.genre)}`;
-        window.open(url, "_blank");
-      });
-    genreItems.append("rect").attr("width", margin.left-5).attr("height", itemHeight-3)
-      .attr("rx",4).attr("ry",4);
-    genreItems.append("text").attr("x",5).attr("y", itemHeight/2+2).style('font-size', '0.5em').text(d => d.genre.split('/').pop());
-  }).catch(err=>console.error(err));
+      // VERTICAL GENRE LIST
+      const listGroup = svg.append("g").attr("class","genre-list").attr("transform", `translate(${-margin.left},0)`);
+      const itemHeight = 24;
+      const genreItems = listGroup.selectAll(".genre-item").data(sortedData).enter().append("g").attr("class","genre-item")
+        .attr("transform", (d,i)=>`translate(1,${i*(itemHeight+8)})`)
+        .on("mouseover", (e,d)=>hoverOn(e, d, "list"))
+        .on("mouseout", ()=>hoverOff())
+        .style("cursor", "pointer")
+        .on("click", (event, d) => {
+          const url = `genre_details.html?genre=${encodeURIComponent(d.genre)}`;
+          window.open(url, "_blank");
+        });
+      genreItems.append("rect").attr("width", margin.left-5).attr("height", itemHeight-3)
+        .attr("rx",4).attr("ry",4);
+      genreItems.append("text").attr("x",5).attr("y", itemHeight/2+2).style('font-size', '0.5em').text(d => d.genre.split('/').pop());
+    }).catch(err=>console.error(err));
+  }
+  renderDisneyScatter('#chart');
   </script>
 </body>
 </html>
