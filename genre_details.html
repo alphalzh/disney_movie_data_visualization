@@ -47,13 +47,13 @@
       background: #eef;
     }
     .axis path, .axis line { stroke: #aaa; }
-    .axis text { font-size: 12px; }
+    .axis text { font-size: 17px; }
 
   </style>
 </head>
 <body>
   <div id="movie-list"></div>
-  <svg id="chart" width="800" height="550"></svg>
+  <svg id="chart" width="1300" height="700"></svg>
 
   <script src="d3.v7.min.js"></script>
   <script src="d3-v6-tip.js"></script>
@@ -116,6 +116,7 @@
       // Axes
       g.append("g")
         .attr("transform", `translate(0,${height})`)
+        .style("font-size", '16px')
         .call(d3.axisBottom(x).tickFormat(d3.format("d")))
         .append("text")
           .attr("x", width/2).attr("y", 40)
@@ -123,6 +124,7 @@
           .text("Release Year");
 
       g.append("g")
+        .style("font-size", '16px')
         .call(d3.axisLeft(y).tickFormat(d=>"$"+d3.format(".2s")(d).replace("G","B")))
         .append("text")
           .attr("transform","rotate(-90)")
@@ -149,7 +151,7 @@
         .enter().append("circle")
           .attr("cx", d=>x(d.year))
           .attr("cy", d=>y(d.gross))
-          .attr("r", d=>rScale(d.gross))
+          .attr("r", d=>rScale(d.gross*2))
           .attr("fill", d=>colorRating(d.rating))
           .attr("stroke","#333")
           .attr("opacity", 1)
@@ -166,14 +168,14 @@
           .transition()
           .duration(200)
           .attr("opacity", 0.2)
-          .attr("r", dd => rScale(dd.gross));
+          .attr("r", dd => rScale(dd.gross*2));
 
         // 3. Highlight the hovered circle smoothly
         d3.select(event.currentTarget)
           .transition()
           .duration(200)
           .attr("opacity", 1)
-          .attr("r", rScale(d.gross) * 1.5);
+          .attr("r", rScale(d.gross*2) * 1.5);
 
         tip.show(d, event.currentTarget);
       })
@@ -186,7 +188,7 @@
           .transition()
           .duration(200)
           .attr("opacity", 1)
-          .attr("r", dd => rScale(dd.gross));
+          .attr("r", dd => rScale(dd.gross*2));
 
         tip.hide(d, event.currentTarget);
       });
@@ -197,16 +199,16 @@
 
       ratings.forEach((r, i) => {
         const row = legend.append("g")
-          .attr("transform", `translate(0,${i*20})`);
+          .attr("transform", `translate(0,${i*28})`);
 
         row.append("rect")
-          .attr("width", 12)
-          .attr("height", 12)
+          .attr("width", 19)
+          .attr("height", 19)
           .attr("fill", colorRating(r));
 
         row.append("text")
-          .attr("x", 18)
-          .attr("y", 10)
+          .attr("x", 22)
+          .attr("y", 15)
           .text(r);
       });
 
@@ -235,13 +237,13 @@
             // stop any in-flight transitions
             circles.interrupt();
             // dim all
-            circles.transition().duration(200).attr("opacity", 0.2).attr("r", d => rScale(d.gross));
+            circles.transition().duration(200).attr("opacity", 0.2).attr("r", d => rScale(d.gross*2));
             // highlight this one
             const c = circles.filter(dd => dd.movie_title === d.movie_title);
             c.raise()
             .transition().duration(200)
             .attr("opacity", 1)
-            .attr("r", rScale(d.gross) * 1.5);
+            .attr("r", rScale(d.gross*2) * 1.5);
             tip.show(d, c.node());
           })
           .style("cursor", "pointer");
@@ -250,7 +252,7 @@
           circles.interrupt()
             .transition().duration(200)
             .attr("opacity", 1)
-            .attr("r", d => rScale(d.gross));
+            .attr("r", d => rScale(d.gross*2));
           tip.hide();
         });
     }
