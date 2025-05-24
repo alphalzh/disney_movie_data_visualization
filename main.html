@@ -10,12 +10,12 @@
 <style>
   svg { display: block; margin: auto; }
     .axis path, .axis line { stroke: #aaa; }
-    .axis text { font-size: 12px; }
-    .legend { font-size: 12px; fill: #333; }
+    .axis text { font-size: 15px; }
+    .legend { font-size: 15px; fill: #333; }
     .tooltip2 { pointer-events: none; font-size: 14px; fill: #000; font-weight: bold; }
-    .hover-label { font-size: 12px; fill: #000; font-weight: bold; text-anchor: middle; }
+    .hover-label { font-size: 15px; fill: #000; font-weight: bold; text-anchor: middle; }
     .genre-item rect { fill: #f5f5f5; stroke: #ccc; rx: 4; ry: 4; }
-    .genre-item text { font-size: 12px; fill: #333; pointer-events: none; }
+    .genre-item text { font-size: 15px; fill: #333; pointer-events: none; }
     .genre-item:hover rect { fill: #e0e0e0; cursor: pointer; }
 /* ---------- overall page ---------- */
 body{
@@ -30,7 +30,7 @@ body{
 
 /* ---------- wrapper holding canvas + selector ---------- */
 #wrapper{
-  width:800px;
+  width:1600px;
   display:flex;
   flex-direction:column;        /* stack canvas & selector vertically */
   align-items:center;
@@ -39,7 +39,7 @@ body{
 /* ---------- main canvas ---------- */
 #viz-container{
   width:100%;
-  height:500px;
+  height:800px;
   position:relative;
   display:flex;justify-content:center;align-items:center;
 }
@@ -58,7 +58,7 @@ body{
   fill-opacity: 1;
 }
 .label-bar {
-  font-size: 16px;
+  font-size: 18px;
   fill: #000;
   text-anchor: start;
   pointer-events: none;
@@ -84,7 +84,7 @@ body{
   padding: 6px 10px;
   border: 1px solid #aaa;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 16px;
   color: #333;
   display: none;
   box-shadow: 0 0 5px rgba(0,0,0,0.1);
@@ -168,9 +168,9 @@ function renderFixedPicture() {
 
 function renderDisneyLines() {
   clearCanvas();
-  const margin = { top: 40, right: 260, bottom: 40, left: 100 };
-  const width  = 960 - margin.left - margin.right;
-  const height = 500 - margin.top - margin.bottom;
+  const margin = { top: 100, right: 450, bottom: 40, left: 280 };
+  const width  = 1760 - margin.left - margin.right;
+  const height = 730 - margin.top - margin.bottom;
 
   const svg = d3.select("#viz-container").append("svg")
     .attr("width",  width + margin.left + margin.right)
@@ -382,7 +382,7 @@ function renderDisneyLines() {
       .attr("x", width / 2)
       .attr("y", height + margin.bottom - 6)  // tuck it just below the axis ticks
       .attr("text-anchor", "middle")
-      .style("font-size", "12px")
+      .style("font-size", "15px")
       .text("Year");
 
     // — after you’ve drawn the Y axis (e.g. svg.append("g").call(d3.axisLeft(y))…)
@@ -390,9 +390,9 @@ function renderDisneyLines() {
       .attr("class", "axis-label")
       .attr("transform", "rotate(-90)")
       .attr("x", -height / 2)
-      .attr("y", -margin.left + 34)            // shift right from the left edge
+      .attr("y", -margin.left/4)            // shift right from the left edge
       .attr("text-anchor", "middle")
-      .style("font-size", "12px")
+      .style("font-size", "15px")
       .text("Total Gross Income by Genre");
 
     // 7. Draw areas (clipped)
@@ -416,14 +416,14 @@ function renderDisneyLines() {
 
     allSeries.forEach((g,i) => {
       const row = legend.append("g")
-        .attr("transform", `translate(0,${i*20})`);
+        .attr("transform", `translate(0,${i*28})`);
       row.append("rect")
-        .attr("width", 15)
-        .attr("height", 15)
+        .attr("width", 19)
+        .attr("height", 19)
         .attr("fill", color(g));
       row.append("text")
-        .attr("x", 20)
-        .attr("y", 12)
+        .attr("x", 23)
+        .attr("y", 15)
         .attr("class", "legend")
         .text(g);
     });
@@ -438,7 +438,7 @@ function renderDisneyLines() {
       .style("color", "black")        //
       .style("padding", "8px")
       .style("border-radius", "2px")
-      .style("font-size", "13px")
+      .style("font-size", "16px")
       // .style("box-shadow", "none")    // 移除阴影
       // .style("border", "none")        // 无边框
       .style("pointer-events", "none")
@@ -455,7 +455,7 @@ function renderDisneyLines() {
       })
     );
 
-    const dotOffset = 25;
+    const dotOffset = 40;
 
     const milestoneGroup = svg.append("g").attr("class","milestones");
 
@@ -487,16 +487,16 @@ function renderDisneyLines() {
           const yTop = y(totalByYear[d.year.getFullYear()]);
           return yTop;
         })
-        .attr("r",5)
+        .attr("r",7)
         .attr("fill","steelblue")
         .attr("opacity", 0)
       .on("mouseover", function(event, d) {
-        d3.select(this).transition().attr("r",7);
+        d3.select(this).transition().attr("r",10);
         const html = `
           <div style="font-weight:600;margin-bottom:4px">
             ${d.year.getFullYear()}
           </div>
-          <div style="font-size:11px;color:#999">DISNEY MILESTONE</div>
+          <div style="font-size:13px;color:#999">DISNEY MILESTONE</div>
           <div style="margin-top:2px;color:#444">${d.text}</div>
         `;
         tooltip
@@ -506,7 +506,7 @@ function renderDisneyLines() {
           .style("display","block");
       })
       .on("mouseout", function() {
-        d3.select(this).transition().attr("r",5);
+        d3.select(this).transition().attr("r",7);
         tooltip.style("display","none");
       });
 
@@ -537,16 +537,16 @@ function renderDisneyLines() {
           );
           return y(point[1]);        // point[1] is the top of the band
         })
-        .attr("r", 3.5)
+        .attr("r", 5)
         .attr("fill","#3f3f3f")
         .attr("opacity", 0)
       .on("mouseover", function(event, d) {
-        d3.select(this).transition().attr("r",6);
+        d3.select(this).transition().attr("r",7);
         const html = `
           <div style="font-weight:600;margin-bottom:4px">
             ${d.year.getFullYear()}
           </div>
-          <div style="font-size:11px;color:#999">MOVIE OF THE YEAR</div>
+          <div style="font-size:13px;color:#999">MOVIE OF THE YEAR</div>
           <div style="color:#666;margin-top:2px">${d.title}, ${d.genre}</div>
           <div style="color:#c8990a;font-weight:500">${d.label}</div>
         `;
@@ -557,7 +557,7 @@ function renderDisneyLines() {
           .style("display","block");
       })
       .on("mouseout", function() {
-        d3.select(this).transition().attr("r",3.5);
+        d3.select(this).transition().attr("r",5);
         tooltip.style("display","none");
       });
 
@@ -584,20 +584,20 @@ function renderDisneyLines() {
       .data(legendData)
       .enter().append("g")
         .attr("class", "legend-item")
-        .attr("transform", (d, i) => `translate(0, ${i * itemHeight})`);
+        .attr("transform", (d, i) => `translate(0, ${i * (itemHeight+10)})`);
 
     // 4. Color swatches (circles)
     legendItems.append("circle")
       .attr("cx", 0)
       .attr("cy", 0)
-      .attr("r", 5)
+      .attr("r", 8)
       .attr("fill", d => d.color);
 
     // 5. Labels
     legendItems.append("text")
-      .attr("x", 10)
+      .attr("x", 13)
       .attr("y", 4)          // align text vertically with circle
-      .style("font-size", "12px")
+      .style("font-size", "15px")
       .text(d => d.label);
 
     clipT.on("end", () => {
@@ -634,9 +634,9 @@ function renderDisneyLines() {
 
 function renderDisneyBar(){
   clearCanvas();
-  const margin = { top: 50, right: 600, bottom: 100, left: 110 };
-    const width  = 1150 - margin.left - margin.right;
-    const height = 500 - margin.top - margin.bottom;
+  const margin = { top: 50, right: 400, bottom: 100, left: 250 };
+    const width  = 1700 - margin.left - margin.right;
+    const height = 800 - margin.top - margin.bottom;
 
     const svg = d3.select('#viz-container')
       .append('svg')
@@ -744,7 +744,7 @@ function renderDisneyBar(){
       // 3) add the Play button
       controls.append('button')
         .attr('id', 'play-pause')
-        .style('margin-left', '0px')
+        .style('margin-left', '260px')
         .style('margin-right', '2px')
         .style('font-size',    '16px')
         .style('cursor',       'pointer')
@@ -1042,9 +1042,9 @@ function renderDisneyScatter() {
   clearCanvas();
   const dataUrl = 'disney_movies_total_gross.csv';
   const svgEl = d3.select("#viz-container").append("svg");
-  const margin = { top: 60, right: 350, bottom: 100, left: 80 };
-  const width  = 950 - margin.left - margin.right;
-  const height = 550 - margin.top  - margin.bottom;
+  const margin = { top: 120, right: 350, bottom: 60, left: 280 };
+  const width  = 1600 - margin.left - margin.right;
+  const height = 800 - margin.top  - margin.bottom;
   const svg = svgEl
     .attr("width",  width + margin.left + margin.right)
     .attr("height", height + margin.top  + margin.bottom)
@@ -1109,7 +1109,7 @@ function renderDisneyScatter() {
     svg.append("g").attr("class", "axis").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x).ticks(8))
       .append("text").attr("x", width/2+50).attr("y", 40).attr("fill", "#000").attr("text-anchor","middle").text("Number of Movies");
     svg.append("g").attr("class", "axis").attr("transform", `translate(70,0)`).call(d3.axisLeft(y).ticks(8).tickFormat(d => "$" + d3.format(".2s")(d).replace("G","B")))
-      .append("text").attr("transform","rotate(-90)").attr("x", -height/2).attr("y", -50).attr("fill","#000").attr("text-anchor","middle").text("Average Inflation-Adjusted Gross");
+      .append("text").attr("transform","rotate(-90)").attr("x", -height/2).attr("y", -80).attr("fill","#000").attr("text-anchor","middle").text("Average Inflation-Adjusted Gross");
 
     // SCATTER LEGENDS
     const defs = svg.append("defs");
@@ -1117,35 +1117,35 @@ function renderDisneyScatter() {
     d3.range(0,1.01,0.1).forEach(t => gradient.append("stop").attr("offset",`${t*100}%`).attr("stop-color", color(t*maxGross)));
     const legendX = width + 35;
     const lg = svg.append("g").attr("transform", `translate(${legendX},0)`);
-    const cbW = 150, cbH = 18;
+    const cbW = 180, cbH = 20;
     lg.append("text").attr("class","legend").attr("x",0).attr("y",30).text("Total Gross (color)");
     lg.append("rect").attr("x",0).attr("y",40).attr("width", cbW).attr("height", cbH).style("fill","url(#color-gradient)");
-    lg.append("g").attr("transform",`translate(0,${40+cbH})`).call(d3.axisBottom(d3.scaleLinear().domain([0,25]).range([0,cbW])).ticks(5).tickFormat(d=>`$${d}B`));
-    const sizeY = 45 + cbH + 80;
+    lg.append("g").attr("transform",`translate(0,${40+cbH})`).style('font-size', '14px').call(d3.axisBottom(d3.scaleLinear().domain([0,25]).range([0,cbW])).ticks(5).tickFormat(d=>`$${d}B`));
+    const sizeY = 45 + cbH + 120;
     lg.append("text").attr("class","legend").attr("x",0).attr("y",sizeY).text("Total Gross (size)");
     const sizes = [maxGross*0.1, maxGross*0.5, maxGross];
     const sl = lg.append("g").attr("transform", `translate(0,${sizeY+32})`);
-    sl.selectAll("circle").data(sizes).enter().append("circle").attr("cx",(d,i)=>i*55 + rScale(d)).attr("cy",0).attr("r",d=>rScale(d)).attr("fill",d=>color(d)).attr("stroke-opacity",0);
-    sl.selectAll("text.size-label").data(sizes).enter().append("text").attr("x",(d,i)=>i*55+rScale(d)).attr("y",d=>rScale(d)+15).attr("text-anchor","middle").text(d=>"$"+d3.format(".2s")(d).replace("G","B")).attr("font-size","12");
-
+    sl.selectAll("circle").data(sizes).enter().append("circle").attr("cx",(d,i)=>i*65 + rScale(d*2)).attr("cy",0).attr("r",d=>rScale(d*2)).attr("fill",d=>color(d)).attr("right-margin",d=>rScale(d*2)).attr("stroke-opacity",0);
+    sl.selectAll("text.size-label").data(sizes).enter().append("text").attr("x",(d,i)=>i*65+rScale(d*2)).attr("y",d=>rScale(d*2)+15).attr("text-anchor","middle").text(d=>"$"+d3.format(".2s")(d).replace("G","B")).attr("font-size","15");
+    lg.append("text").attr("class","legend").attr("x",0).attr("y",sizeY+170).text("MDAA Rating Pie Chart Legend");
     // GLOBAL PIE & LEGEND under scatter legends
     //const staticPie = svg.append("g").attr("class","static-pie").attr("transform", `translate(${legendX},${sizeY+100})`);
-    const pieLegend = svg.append("g").attr("class","pie-legend").attr("transform", `translate(${legendX},${sizeY+120})`);
+    const pieLegend = svg.append("g").attr("class","pie-legend").attr("transform", `translate(${legendX},${sizeY+185})`);
 
     allRatings.forEach((r, i) => {
         const row = pieLegend.append("g")
-          .attr("transform", `translate(0,${i*20})`);
+          .attr("transform", `translate(0,${i*26})`);
 
         row.append("rect")
-          .attr("width", 12)
-          .attr("height", 12)
+          .attr("width", 18)
+          .attr("height", 18)
           .attr("fill", colorRating(r));
 
         row.append("text")
-          .attr("x", 18)
-          .attr("y", 10)
+          .attr("x", 22)
+          .attr("y", 14)
           .text(r)
-          .attr("font-size", "12px");
+          .attr("font-size", "18px");
       });
 
 
@@ -1154,7 +1154,7 @@ function renderDisneyScatter() {
       const name = `anim-${Date.now()}`;
       circles.transition(name).duration(300).attr("opacity",0.15);
       const thisCircle = circles.filter(dd=>dd.genre===d.genre).raise();   
-      const newR = rScale(d.totalGross) * 1.5+15;
+      const newR = rScale(d.totalGross*2) * 1.5+15;
       thisCircle.transition(name).duration(300).attr("r", newR).attr("opacity",1);
       // inner pie
       const breakdown = genreRating.get(d.genre) || [];
@@ -1187,7 +1187,7 @@ function renderDisneyScatter() {
       tip.hide();
       const name = `anim-off-${Date.now()}`;
       const name2 = `anim-off-2-${Date.now()}`;
-      circles.transition(name).duration(300).attr("opacity",1).attr("r", d=>rScale(d.totalGross));
+      circles.transition(name).duration(300).attr("opacity",1).attr("r", d=>rScale(d.totalGross*2));
       pieGroup.transition(name).duration(300).style("opacity",0);
       //svg.selectAll(".hover-label").remove();
     }
@@ -1209,13 +1209,13 @@ function renderDisneyScatter() {
         window.open(url, "_blank");
       });
     circles.transition("raise").delay((d,i)=>i*100).duration(1000)
-      .attr("cy", d=>y(d.averageGross)).attr("r", d=>rScale(d.totalGross));
+      .attr("cy", d=>y(d.averageGross)).attr("r", d=>rScale(d.totalGross*2));
 
     // VERTICAL GENRE LIST
     const listGroup = svg.append("g").attr("class","genre-list").attr("transform", `translate(${-margin.left},0)`);
-    const itemHeight = 24;
+    const itemHeight = 32;
     const genreItems = listGroup.selectAll(".genre-item").data(sortedData).enter().append("g").attr("class","genre-item")
-      .attr("transform", (d,i)=>`translate(1,${i*(itemHeight+8)})`)
+      .attr("transform", (d,i)=>`translate(85,${i*(itemHeight+14)})`)
       .on("mouseover", (e,d)=>hoverOn(e, d, "list"))
       .on("mouseout", ()=>hoverOff())
       .style("cursor", "pointer")
@@ -1223,49 +1223,22 @@ function renderDisneyScatter() {
         const url = `genre_details.html?genre=${encodeURIComponent(d.genre)}`;
         window.open(url, "_blank");
       });
-    genreItems.append("rect").attr("width", margin.left-5).attr("height", itemHeight-3)
+    genreItems.append("rect").attr("width", margin.left/2).attr("height", itemHeight-3)
       .attr("rx",4).attr("ry",4);
-    genreItems.append("text").attr("x",5).attr("y", itemHeight/2+2).style('font-size', '8').text(d => d.genre.split('/').pop());
+    genreItems.append("text").attr("x",5).attr("y", itemHeight/2+4).style('font-size', '15').text(d => d.genre.split('/').pop());
   }).catch(err=>console.error(err));
 }
 
-function drawBarChart(){ /* … same stub as before … */ clearCanvas();
-  const svg=d3.select("#viz-container").append("svg")
-              .attr("width","100%").attr("height","100%");
-  const data=[5,8,3,7,2], x=d3.scaleBand().domain(d3.range(data.length))
-              .range([40,760]).padding(.3),
-        y=d3.scaleLinear().domain([0,10]).range([300,50]);
-  svg.selectAll("rect").data(data).enter().append("rect")
-     .attr("x",(d,i)=>x(i)).attr("y",d=>y(d))
-     .attr("width",x.bandwidth()).attr("height",d=>y(0)-y(d))
-     .attr("fill","#64b5f6"); }
-
-function drawScatterPlot(){ /* … */ clearCanvas();
-  const svg=d3.select("#viz-container").append("svg")
-              .attr("width","100%").attr("height","100%");
-  const pts=d3.range(40).map(()=>[Math.random()*700+50,Math.random()*250+50]);
-  svg.selectAll("circle").data(pts).enter().append("circle")
-     .attr("cx",d=>d[0]).attr("cy",d=>d[1]).attr("r",6).attr("fill","#ff7043"); }
-
-function drawHeatmap(){ /* … */ clearCanvas();
-  const svg=d3.select("#viz-container").append("svg")
-              .attr("width","100%").attr("height","100%");
-  const n=8,cell=40,color=d3.scaleSequential(d3.interpolateViridis).domain([0,1]);
-  svg.selectAll("rect").data(d3.cross(d3.range(n),d3.range(n))).enter().append("rect")
-     .attr("x",d=>60+d[0]*cell).attr("y",d=>60+d[1]*cell)
-     .attr("width",cell-2).attr("height",cell-2)
-     .attr("fill",()=>color(Math.random())); }
-
 const drawers={0:renderDisneyScatter,1:renderDisneyLines,2:renderDisneyBar};
 
-const w=800,h=90,r=12,gap=180,cy=45,firstX=w/2-((visualizations.length-1)*gap)/2;
+const w=800,h=90,r=15,gap=180,cy=45,firstX=w/2-((visualizations.length-1)*gap)/2;
 const svgNav=d3.select("#nav").attr("viewBox",`0 0 ${w} ${h}`);
 const gNav=svgNav.append("g").attr("transform",`translate(0,${cy})`);
 let currentView = null;  // null => fixed picture
 
 gNav.append("line").attr("x1",firstX).attr("x2",firstX+(visualizations.length-1)*gap)
     .attr("y1",0).attr("y2",0).attr("stroke","#ddd")
-    .attr("stroke-width",8).attr("stroke-linecap","round");
+    .attr("stroke-width",10).attr("stroke-linecap","round");
 
 const dots=gNav.selectAll("g.dotGroup").data(visualizations).enter().append("g")
   .attr("class","dotGroup")
@@ -1274,7 +1247,7 @@ const dots=gNav.selectAll("g.dotGroup").data(visualizations).enter().append("g")
   .style("cursor","pointer");
 
 dots.append("circle").attr("class","dot").attr("r",r);
-dots.append("text").attr("class","label").attr("y",r+23).text(d=>d.name);
+dots.append("text").attr("class","label").attr("y",r+25).text(d=>d.name).style('font-size', '18px');
 
 dots
   .on("mouseover", function(e, d) {
